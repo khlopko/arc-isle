@@ -6,7 +6,8 @@ use crate::parser::utils::ReadError;
 pub struct Schema {
     pub hosts: Hosts,
     pub versioning: Versioning,
-    pub object_decl_results: ObjectDeclResults
+    pub types: TypeDeclResults,
+    pub interfaces: InterfaceDeclResults
 }
 
 impl Debug for Schema {
@@ -14,7 +15,7 @@ impl Debug for Schema {
         let mut result = "Schema {\n".to_string();
         result.push_str(&format!("  hosts = {:?}\n", self.hosts));
         result.push_str(&format!("  versioning = {:?}\n", self.versioning));
-        result.push_str(&format!("  object_decl_results = {:?}\n", self.object_decl_results));
+        result.push_str(&format!("  types = {:?}\n", self.types));
         f.write_str(&result)
     }
 }
@@ -38,17 +39,17 @@ pub struct Versioning {
     pub header: Option<String>
 }
 
-pub type ObjectDeclResults = Vec<Result<ObjectDecl, ObjectError>>;
+pub type TypeDeclResults = Vec<Result<TypeDecl, TypeDeclError>>;
 
 #[derive(PartialEq)]
-pub struct ObjectDecl {
+pub struct TypeDecl {
     pub name: String,
     pub property_decls: Vec<PropertyDecl>
 }
 
-impl Debug for ObjectDecl {
+impl Debug for TypeDecl {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut result = "ObjectDecl {\n".to_string();
+        let mut result = "TypeDecl {\n".to_string();
         result.push_str(&format!("    name = {}\n", self.name));
         for property_decl in &self.property_decls {
             result.push_str(&format!("    {} = {:?}\n", property_decl.name, property_decl.data_type_decl));
@@ -60,11 +61,11 @@ impl Debug for ObjectDecl {
 #[derive(Debug, PartialEq)]
 pub struct PropertyDecl {
     pub name: String,
-    pub data_type_decl: Result<DataTypeDecl, ObjectError>
+    pub data_type_decl: Result<DataTypeDecl, TypeDeclError>
 }
 
-#[derive(PartialEq)]
-pub enum ObjectError {
+#[derive(Debug, PartialEq)]
+pub enum TypeDeclError {
     ImportFailure(ImportError),
     UnsupportedTypeDeclaration,
     UnsupportedKeyType,
@@ -85,7 +86,7 @@ pub enum DataType {
     Array(Box<DataType>),
     Dict(Primitive, Box<DataType>),
     Object(String),
-    ObjectDecl(ObjectDecl)
+    ObjectDecl(TypeDecl)
 }
 
 #[derive(Debug, PartialEq)]
@@ -124,4 +125,16 @@ impl PartialEq for ImportError {
             _ => false
         }
     }
+}
+
+// MARK - Interface
+
+pub struct InterfaceDeclResults {
+    pub results: Vec<Result<InterfaceDecl, InterfaceDeclError>>
+}
+
+pub struct InterfaceDecl {
+}
+
+pub enum InterfaceDeclError {
 }

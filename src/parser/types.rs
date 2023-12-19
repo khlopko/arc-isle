@@ -1,19 +1,19 @@
 use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Display, Formatter};
 use yaml_rust::Yaml;
 use yaml_rust::yaml::Hash;
 use crate::parser::imports::detect;
 use crate::parser::utils::as_str_or;
-use crate::schema::{DataType, DataTypeDecl, ObjectDecl, ObjectDeclResults, ObjectError, Primitive, PropertyDecl};
+use crate::schema::{DataType, DataTypeDecl, TypeDecl, TypesDeclResults, TypeDeclError, Primitive, PropertyDecl};
 
-pub struct ObjectsParser<'a> {
+pub struct TypesParser<'a> {
     pub main: &'a Yaml,
     pub parent_path: &'a str
 }
 
-impl<'a> ObjectsParser<'a> {
-    pub fn parse(&self) -> Result<ObjectDeclResults, ObjectError> {
-        let mut object_decl_results = Vec::new();
+impl<'a> TypesParser<'a> {
+    pub fn parse(&self) -> Result<TypesDeclResults, TypeDeclError> {
+        let mut results = Vec::new();
         let mut sources = Vec::new();
         sources.push(Ok(self.main.clone()));
         if let Ok(imports) = detect(&self.main, self.parent_path) {
@@ -22,26 +22,26 @@ impl<'a> ObjectsParser<'a> {
         for source in sources {
             match source {
                 Ok(source) =>
-                    self.parse_composed_source(&source, &mut object_decl_results)?,
+                    self.parse_composed_source(&source, &mut results)?,
                 Err(err) =>
-                    object_decl_results.push(Err(ObjectError::ImportFailure(err)))
+                    results.push(Err(TypeDeclError::ImportFailure(err)))
             }
         }
-        Ok(object_decl_results)
+        Ok(results)
     }
 
     fn parse_composed_source(
         &self,
         source: &Yaml,
-        output: &mut ObjectDeclResults
-    ) -> Result<(), ObjectError> {
-        let source = source.as_hash().ok_or(ObjectError::UnsupportedTypeDeclaration)?;
+        output: &mut TypesDeclResults
+    ) -> Result<(), TypeDeclError> {
+        let source = source.as_hash().ok_or(TypeDeclError::UnsupportedTypeDeclaration)?;
         for (key, value) in source {
-            let key = &as_str_or(key, ObjectError::UnsupportedKeyType)?;
+            let key = &as_str_or(key, TypeDeclError::UnsupportedKeyType)?;
             if key == "_import" {
                 continue;
             }
-            let object_parser = ObjectParser { key, value: &value.as_hash().unwrap() };
+            let object_parser = TypeParser { key, value: &value.as_hash().unwrap() };
             let result = object_parser.parse();
             output.push(result);
         }
@@ -49,7 +49,7 @@ impl<'a> ObjectsParser<'a> {
     }
 }
 
-pub struct ObjectParser<'a> {
+pub struct TypeParser<'a> {
     pub key: &'a str,
     pub value: &'a Hash
 }
@@ -58,11 +58,11 @@ fn type_of<T>(_: T) -> &'static str {
     std::any::type_name::<T>()
 }
 
-impl<'a> ObjectParser<'a> {
-    pub fn parse(&self) -> Result<ObjectDecl, ObjectError> {
+impl<'a> TypeParser<'a> {
+    pub fn parse(&self) -> Result<TypeDecl, TypeDeclError> {
         let mut property_decls = Vec::new();
         for (property_name, property_type) in self.value.iter() {
-            let property_name = as_str_or(property_name, ObjectError::UnsupportedKeyType)?;
+            let property_name = as_str_or(property_name, TypeDeclError::UnsupportedKeyType)?;
             let data_type_decl = self.make_data_type_decl(property_type, &property_name);
             let property_decl = PropertyDecl {
                 name: property_name,
@@ -70,7 +70,7 @@ impl<'a> ObjectParser<'a> {
             };
             property_decls.push(property_decl);
         }
-        Ok(ObjectDecl {
+        Ok(TypeDecl {
             name: self.key.to_string(),
             property_decls
         })
@@ -80,17 +80,17 @@ impl<'a> ObjectParser<'a> {
         &self,
         raw_type: &Yaml,
         property_name: &str
-    ) -> Result<DataTypeDecl, ObjectError> {
+    ) -> Result<DataTypeDecl, TypeDeclError> {
         match raw_type {
             Yaml::String(string_value) => self.string_data_type_decl(string_value),
             Yaml::Hash(hash_value) => self.hash_data_type_decl(property_name, hash_value),
-            _ => Err(ObjectError::UnsupportedTypeDeclaration)
+            _ => Err(TypeDeclError::UnsupportedTypeDeclaration)
         }
     }
 
-    fn string_data_type_decl(&self, string_value: &str) -> Result<DataTypeDecl, ObjectError> {
+    fn string_data_type_decl(&self, string_value: &str) -> Result<DataTypeDecl, TypeDeclError> {
         if string_value.is_empty() {
-            return Err(ObjectError::EmptyTypeDeclaration);
+            return Err(TypeDeclError::EmptyTypeDeclaration);
         }
         let chars: Vec<char> = string_value.chars().collect();
         let mut last_read_index = 0;
@@ -100,7 +100,7 @@ impl<'a> ObjectParser<'a> {
             last_read_index += 1;
         }
         if type_name.is_empty() {
-            return Err(ObjectError::EmptyTypeDeclaration);
+            return Err(TypeDeclError::EmptyTypeDeclaration);
         }
         if last_read_index >= chars.len() {
             let data_type = self.make_data_type(&type_name, &Vec::new())?;
@@ -122,14 +122,14 @@ impl<'a> ObjectParser<'a> {
         &self,
         property_name: &str,
         hash_value: &Hash
-    ) -> Result<DataTypeDecl, ObjectError> {
+    ) -> Result<DataTypeDecl, TypeDeclError> {
         if hash_value.is_empty() {
-            return Err(ObjectError::EmptyTypeDeclaration);
+            return Err(TypeDeclError::EmptyTypeDeclaration);
         }
-        let parser = ObjectParser { key: property_name, value: hash_value };
+        let parser = TypeParser { key: property_name, value: hash_value };
         let object_decl = parser.parse()
             .map(|val| DataTypeDecl { data_type: DataType::ObjectDecl(val), is_required: true })
-            .map_err(|_| ObjectError::UnsupportedTypeDeclaration);
+            .map_err(|_| TypeDeclError::UnsupportedTypeDeclaration);
         return object_decl;
     }
 
@@ -137,7 +137,7 @@ impl<'a> ObjectParser<'a> {
         &self,
         type_name: &str,
         subtypes: &Vec<String>
-    ) -> Result<DataType, ObjectError> {
+    ) -> Result<DataType, TypeDeclError> {
         match self.make_primitive(type_name) {
             Ok(primitive) => return Ok(DataType::Primitive(primitive)),
             Err(_) => {}
@@ -164,7 +164,7 @@ impl<'a> ObjectParser<'a> {
         }
     }
 
-    fn subtypes(&self, chars: &Vec<char>, index: &mut usize) -> Result<Vec<String>, ObjectError> {
+    fn subtypes(&self, chars: &Vec<char>, index: &mut usize) -> Result<Vec<String>, TypeDeclError> {
         let mut _i = *index;
         let mut subtypes: Vec<String> = Vec::new();
         if chars[_i] == '[' {
@@ -192,7 +192,7 @@ impl<'a> ObjectParser<'a> {
                 _i += 1;
             }
             if !subtypes.iter().all(|e| !e.is_empty()) {
-                return Err(ObjectError::SubtypeValuesEmptyDeclaration);
+                return Err(TypeDeclError::SubtypeValuesEmptyDeclaration);
             }
             _i += 1;
         }
@@ -200,46 +200,40 @@ impl<'a> ObjectParser<'a> {
         Ok(subtypes)
     }
 
-    fn make_primitive(&self, raw: &str) -> Result<Primitive, ObjectError> {
+    fn make_primitive(&self, raw: &str) -> Result<Primitive, TypeDeclError> {
         match raw {
             "str" => Ok(Primitive::Str),
             "bool" => Ok(Primitive::Bool),
             "int" => Ok(Primitive::Int),
             "double" => Ok(Primitive::Double),
-            other => Err(ObjectError::UnsupportedPrimitive(other.to_string()))
+            other => Err(TypeDeclError::UnsupportedPrimitive(other.to_string()))
         }
     }
 }
 
-impl ObjectError {
+impl TypeDeclError {
     fn default_fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
-            ObjectError::ImportFailure(import_error) =>
+            TypeDeclError::ImportFailure(import_error) =>
                 write!(f, "Import failed: {}", import_error.to_string()),
-            ObjectError::UnsupportedTypeDeclaration =>
+            TypeDeclError::UnsupportedTypeDeclaration =>
                 write!(f, "This type declaration format is not supported."),
-            ObjectError::UnsupportedKeyType =>
+            TypeDeclError::UnsupportedKeyType =>
                 write!(f, "Key type must be string."),
-            ObjectError::EmptyTypeDeclaration =>
+            TypeDeclError::EmptyTypeDeclaration =>
                 write!(f, "Type declaration cannot be empty."),
-            ObjectError::SubtypeValuesEmptyDeclaration =>
+            TypeDeclError::SubtypeValuesEmptyDeclaration =>
                 write!(f, "Subtype declaration cannot be empty."),
-            ObjectError::UnsupportedPrimitive(value) =>
+            TypeDeclError::UnsupportedPrimitive(value) =>
                 write!(f, "Primitive {} not supported.", value)
         }
     }
 }
 
-impl Error for ObjectError {
+impl Error for TypeDeclError {
 }
 
-impl Display for ObjectError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.default_fmt(f)
-    }
-}
-
-impl Debug for ObjectError {
+impl Display for TypeDeclError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.default_fmt(f)
     }
@@ -248,13 +242,13 @@ impl Debug for ObjectError {
 #[cfg(test)]
 mod tests {
     use yaml_rust::Yaml;
-    use crate::schema::{DataType, DataTypeDecl, ObjectDecl, Primitive, PropertyDecl};
+    use crate::{schema::{DataType, DataTypeDecl, TypeDecl, Primitive, PropertyDecl}, parser::types::TypeParser};
 
     #[test]
     fn make_data_type_decl_for_str() {
         let key = "key".to_string();
         let value = Yaml::String("str".to_string());
-        let parser = crate::parser::ObjectParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
@@ -268,7 +262,7 @@ mod tests {
     fn make_data_type_decl_for_optional_str() {
         let key = "key".to_string();
         let value = Yaml::String("str?".to_string());
-        let parser = crate::parser::ObjectParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
@@ -282,7 +276,7 @@ mod tests {
     fn make_data_type_decl_for_array() {
         let key = "key".to_string();
         let value = Yaml::String("array[int]".to_string());
-        let parser = crate::parser::ObjectParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
@@ -299,7 +293,7 @@ mod tests {
     fn make_data_type_decl_for_optional_array() {
         let key = "key".to_string();
         let value = Yaml::String("array[int]?".to_string());
-        let parser = crate::parser::ObjectParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
@@ -316,7 +310,7 @@ mod tests {
     fn make_data_type_decl_for_dict_with_primitives() {
         let key = "key".to_string();
         let value = Yaml::String("dict[int, str]?".to_string());
-        let parser = crate::parser::ObjectParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
@@ -333,7 +327,7 @@ mod tests {
     fn make_data_type_decl_for_dict_with_another_data_type() {
         let key = "key".to_string();
         let value = Yaml::String("dict[int, array[user]]?".to_string());
-        let parser = crate::parser::ObjectParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, &key)
@@ -353,7 +347,7 @@ mod tests {
     fn make_data_type_decl_for_optional_object() {
         let key = "created_at".to_string();
         let value = Yaml::String("date?".to_string());
-        let parser = crate::parser::ObjectParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, &key)
@@ -374,7 +368,7 @@ mod tests {
         hash.insert(Yaml::String("updated_at".to_string()), Yaml::String("date".to_string()));
         hash.insert(Yaml::String("is_active".to_string()), Yaml::String("bool".to_string()));
         let value = Yaml::Hash(hash);
-        let parser = crate::parser::ObjectParser { key: &key, value: &value.as_hash().unwrap() };
+        let parser = TypeParser { key: &key, value: &value.as_hash().unwrap() };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, &key)
@@ -382,7 +376,7 @@ mod tests {
 
         let expected = DataTypeDecl {
             data_type: DataType::ObjectDecl(
-                ObjectDecl {
+                TypeDecl {
                     name: "nested_object".to_string(),
                     property_decls: Vec::from([
                         PropertyDecl {
