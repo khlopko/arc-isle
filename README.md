@@ -16,7 +16,7 @@ By default, it is recommended to not maintain single document with description o
 
 ```yaml
 types:
-	_import: types.yml
+    _import: types.yml
 ```
 
 Imports also can include list of files:
