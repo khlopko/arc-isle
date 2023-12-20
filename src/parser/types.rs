@@ -4,7 +4,7 @@ use yaml_rust::Yaml;
 use yaml_rust::yaml::Hash;
 use crate::parser::imports::detect;
 use crate::parser::utils::as_str_or;
-use crate::schema::{DataType, DataTypeDecl, TypeDecl, TypesDeclResults, TypeDeclError, Primitive, PropertyDecl};
+use crate::schema::{DataType, DataTypeDecl, TypeDecl, TypeDeclResults, TypeDeclError, Primitive, PropertyDecl};
 
 pub struct TypesParser<'a> {
     pub main: &'a Yaml,
@@ -12,7 +12,7 @@ pub struct TypesParser<'a> {
 }
 
 impl<'a> TypesParser<'a> {
-    pub fn parse(&self) -> Result<TypesDeclResults, TypeDeclError> {
+    pub fn parse(&self) -> Result<TypeDeclResults, TypeDeclError> {
         let mut results = Vec::new();
         let mut sources = Vec::new();
         sources.push(Ok(self.main.clone()));
@@ -33,7 +33,7 @@ impl<'a> TypesParser<'a> {
     fn parse_composed_source(
         &self,
         source: &Yaml,
-        output: &mut TypesDeclResults
+        output: &mut TypeDeclResults
     ) -> Result<(), TypeDeclError> {
         let source = source.as_hash().ok_or(TypeDeclError::UnsupportedTypeDeclaration)?;
         for (key, value) in source {

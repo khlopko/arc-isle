@@ -1,6 +1,6 @@
 // mod
 
-use std::fmt::{Debug, Formatter};
+use std::{fmt::{Debug, Formatter, Display}, error::Error};
 use crate::parser::utils::ReadError;
 
 pub struct Schema {
@@ -16,6 +16,7 @@ impl Debug for Schema {
         result.push_str(&format!("  hosts = {:?}\n", self.hosts));
         result.push_str(&format!("  versioning = {:?}\n", self.versioning));
         result.push_str(&format!("  types = {:?}\n", self.types));
+        result.push_str(&format!("  interfaces = {:?}\n", self.interfaces));
         f.write_str(&result)
     }
 }
@@ -129,12 +130,25 @@ impl PartialEq for ImportError {
 
 // MARK - Interface
 
-pub struct InterfaceDeclResults {
-    pub results: Vec<Result<InterfaceDecl, InterfaceDeclError>>
-}
+pub type InterfaceDeclResults = Vec<Result<InterfaceDecl, InterfaceDeclError>>;
 
+#[derive(Debug)]
 pub struct InterfaceDecl {
 }
 
+#[derive(Debug)]
 pub enum InterfaceDeclError {
+    ImportFailure(ImportError),
+    UnsupportedInterfaceDeclaration
+}
+
+impl Error for InterfaceDeclError {
+}
+
+impl Display for InterfaceDeclError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            _ => f.write_str("InterfaceDeclError")
+        }
+    }
 }
