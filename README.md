@@ -1,11 +1,9 @@
 # ArcISLE
-- The **I**nterface **S**pecification **L**anguag**e**.
+ -- The **I**nterface **S**pecification **L**anguag**e**.
 
-Its goal to provide lightweight way to describe any type of interfaces in software to provide with more advanced tools for their analysis and governance.
+Its goal is to provide a lightweight way to describe virtually any type of interfaces in the software and provide more advanced tools for the analysis and governance.
 
 # Structure
-
----
 
 All specification is written using YAML solely. It allows to write less, do this faster, and still have powerful tools to cover wide range of needs. JSON has inconvenient limitations, like requiring quotes almost everywhere, which make it harder to write manually.
 
@@ -25,17 +23,15 @@ Imports also can include list of files:
 
 ```yaml
 _import:
-	- file1.yml
-	- file2.yml
-	- file3.yml
-	- file4.yml
+    - file1.yml
+    - file2.yml
+    - file3.yml
+    - file4.yml
 ```
 
 Path to the file is resolved relatively to the root document, from which an import is requested.
 
 # Types
-
----
 
 API usually contains a lot of specific types, like user, or post, or transaction, etc. These entities appear in many places as we start defining interfaces. By defining them upfront and reusing we can simplify workflow in future. That’s what types for.
 
@@ -43,29 +39,29 @@ Types declarations is allowed inside `types` section (or separated files include
 
 ```yaml
 user:
-	id: uuid
-	name: str
-	role: str
+    id: uuid
+    name: str
+    role: str
 ```
 
 You can also nest types up to 3 levels (this limitation is artificial and made for improved readability):
 
 ```yaml
 settings:
-	version: str?
-	flags:
-		a: bool
-		b: bool	
-		c: bool
+    version: str?
+    flags:
+        a: bool
+        b: bool	
+        c: bool
 ```
 
 Types can be referenced inside other types:
 
 ```yaml
 post:
-	title: str
-	body: str
-	author: user
+    title: str
+    body: str
+    author: user
 ```
 
 ## Built-in
@@ -159,21 +155,21 @@ types:
     title: str
     link: url
 interfaces:
-	- path: news
-	  method: get
-	  query:
-	    search: str?
-	  response:
-	    items: array[news_entry]
-	    next_page_link: url?
-	- path: news
-	  method: post
-	  body:
-	    title: str
-	    link: url
-	  response: news_entry
-	- path: news/{entry_id}
-	  method: delete
+    - path: news
+      method: get
+      query:
+        search: str?
+      response:
+        items: array[news_entry]
+        next_page_link: url?
+    - path: news
+      method: post
+      body:
+        title: str
+        link: url
+      response: news_entry
+    - path: news/{entry_id}
+      method: delete
 ```
 
 ## Different responses
@@ -182,17 +178,17 @@ An advanced scenario is when we want to define custom responses for different ca
 
 ```yaml
 - path: news/{entry_id}
-	method: delete
+  method: delete
   response:
-		200: news_entry
-		4xx: 
-			code: int
-			reason: str?
+    200: news_entry
+    4xx: 
+        code: int
+        reason: str?
     5xx:
-			message: str
+        message: str
     501:
-			code: int
-			reason: str?
+        code: int
+        reason: str?
 ```
 
 You can specify either concrete status code, like `200` or `501` in example above, or pattern for a family of status codes, like `4xx` and `5xx`, and you can combine both styles.
