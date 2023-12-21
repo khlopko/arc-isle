@@ -1,6 +1,6 @@
 // mod
 
-use std::{fmt::{Debug, Formatter, Display}, error::Error};
+use std::{fmt::{Debug, Formatter, Display}, error::Error, collections::HashMap, iter::Map};
 use crate::parser::utils::ReadError;
 
 pub struct Schema {
@@ -132,11 +132,49 @@ impl PartialEq for ImportError {
 
 pub type InterfaceDeclResults = Vec<Result<InterfaceDecl, InterfaceDeclError>>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InterfaceDecl {
+    pub ident: String,
+    pub spec: InterfaceSpec
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
+pub enum InterfaceSpec {
+   Api(ApiSpec) 
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ApiSpec {
+    pub method: HTTPMethod,
+    pub payload: Option<HttpPayload>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum HTTPMethod {
+    Get,
+    Post,
+    Put,
+    Delete
+}
+
+#[derive(Debug, PartialEq)]
+enum JsonValue {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(String),
+    Array(Vec<JsonValue>),
+    Object(HashMap<String, JsonValue>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum HttpPayload {
+    Query(Vec<PropertyDecl>),
+    Body(Vec<PropertyDecl>)
+}
+
+#[derive(Debug, PartialEq)]
 pub enum InterfaceDeclError {
     ImportFailure(ImportError),
     UnsupportedInterfaceDeclaration

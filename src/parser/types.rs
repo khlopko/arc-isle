@@ -1,14 +1,16 @@
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-use yaml_rust::Yaml;
-use yaml_rust::yaml::Hash;
 use crate::parser::imports::detect;
 use crate::parser::utils::as_str_or;
-use crate::schema::{DataType, DataTypeDecl, TypeDecl, TypeDeclResults, TypeDeclError, Primitive, PropertyDecl};
+use crate::schema::{
+    DataType, DataTypeDecl, Primitive, PropertyDecl, TypeDecl, TypeDeclError, TypeDeclResults,
+};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use yaml_rust::yaml::Hash;
+use yaml_rust::Yaml;
 
 pub struct TypesParser<'a> {
     pub main: &'a Yaml,
-    pub parent_path: &'a str
+    pub parent_path: &'a str,
 }
 
 impl<'a> TypesParser<'a> {
@@ -21,10 +23,8 @@ impl<'a> TypesParser<'a> {
         }
         for source in sources {
             match source {
-                Ok(source) =>
-                    self.parse_composed_source(&source, &mut results)?,
-                Err(err) =>
-                    results.push(Err(TypeDeclError::ImportFailure(err)))
+                Ok(source) => self.parse_composed_source(&source, &mut results)?,
+                Err(err) => results.push(Err(TypeDeclError::ImportFailure(err))),
             }
         }
         Ok(results)
@@ -33,15 +33,20 @@ impl<'a> TypesParser<'a> {
     fn parse_composed_source(
         &self,
         source: &Yaml,
-        output: &mut TypeDeclResults
+        output: &mut TypeDeclResults,
     ) -> Result<(), TypeDeclError> {
-        let source = source.as_hash().ok_or(TypeDeclError::UnsupportedTypeDeclaration)?;
+        let source = source
+            .as_hash()
+            .ok_or(TypeDeclError::UnsupportedTypeDeclaration)?;
         for (key, value) in source {
             let key = &as_str_or(key, TypeDeclError::UnsupportedKeyType)?;
             if key == "_import" {
                 continue;
             }
-            let object_parser = TypeParser { key, value: &value.as_hash().unwrap() };
+            let object_parser = TypeParser {
+                key,
+                value: &value.as_hash().unwrap(),
+            };
             let result = object_parser.parse();
             output.push(result);
         }
@@ -51,7 +56,7 @@ impl<'a> TypesParser<'a> {
 
 pub struct TypeParser<'a> {
     pub key: &'a str,
-    pub value: &'a Hash
+    pub value: &'a Hash,
 }
 
 fn type_of<T>(_: T) -> &'static str {
@@ -66,25 +71,25 @@ impl<'a> TypeParser<'a> {
             let data_type_decl = self.make_data_type_decl(property_type, &property_name);
             let property_decl = PropertyDecl {
                 name: property_name,
-                data_type_decl
+                data_type_decl,
             };
             property_decls.push(property_decl);
         }
         Ok(TypeDecl {
             name: self.key.to_string(),
-            property_decls
+            property_decls,
         })
     }
 
     fn make_data_type_decl(
         &self,
         raw_type: &Yaml,
-        property_name: &str
+        property_name: &str,
     ) -> Result<DataTypeDecl, TypeDeclError> {
         match raw_type {
             Yaml::String(string_value) => self.string_data_type_decl(string_value),
             Yaml::Hash(hash_value) => self.hash_data_type_decl(property_name, hash_value),
-            _ => Err(TypeDeclError::UnsupportedTypeDeclaration)
+            _ => Err(TypeDeclError::UnsupportedTypeDeclaration),
         }
     }
 
@@ -104,31 +109,47 @@ impl<'a> TypeParser<'a> {
         }
         if last_read_index >= chars.len() {
             let data_type = self.make_data_type(&type_name, &Vec::new())?;
-            return Ok(DataTypeDecl { data_type, is_required: true });
+            return Ok(DataTypeDecl {
+                data_type,
+                is_required: true,
+            });
         }
         let subtypes = self.subtypes(&chars, &mut last_read_index)?;
         let data_type = self.make_data_type(&type_name, &subtypes)?;
         let mut is_required = true;
         if last_read_index >= chars.len() {
-            return Ok(DataTypeDecl { data_type, is_required: true });
+            return Ok(DataTypeDecl {
+                data_type,
+                is_required: true,
+            });
         }
         if chars[last_read_index] == '?' {
             is_required = false
         }
-        Ok(DataTypeDecl { data_type, is_required })
+        Ok(DataTypeDecl {
+            data_type,
+            is_required,
+        })
     }
 
     fn hash_data_type_decl(
         &self,
         property_name: &str,
-        hash_value: &Hash
+        hash_value: &Hash,
     ) -> Result<DataTypeDecl, TypeDeclError> {
         if hash_value.is_empty() {
             return Err(TypeDeclError::EmptyTypeDeclaration);
         }
-        let parser = TypeParser { key: property_name, value: hash_value };
-        let object_decl = parser.parse()
-            .map(|val| DataTypeDecl { data_type: DataType::ObjectDecl(val), is_required: true })
+        let parser = TypeParser {
+            key: property_name,
+            value: hash_value,
+        };
+        let object_decl = parser
+            .parse()
+            .map(|val| DataTypeDecl {
+                data_type: DataType::ObjectDecl(val),
+                is_required: true,
+            })
             .map_err(|_| TypeDeclError::UnsupportedTypeDeclaration);
         return object_decl;
     }
@@ -136,7 +157,7 @@ impl<'a> TypeParser<'a> {
     fn make_data_type(
         &self,
         type_name: &str,
-        subtypes: &Vec<String>
+        subtypes: &Vec<String>,
     ) -> Result<DataType, TypeDeclError> {
         match self.make_primitive(type_name) {
             Ok(primitive) => return Ok(DataType::Primitive(primitive)),
@@ -146,22 +167,24 @@ impl<'a> TypeParser<'a> {
             "array" => {
                 let contained_type = self.make_data_type(&subtypes[0], &Vec::new())?;
                 Ok(DataType::Array(Box::new(contained_type)))
-            },
-            "dict" => {
-                let key = self.make_primitive(&subtypes[0])?;
-                let mut value_type_name: &str = &subtypes[1];
-                let value_subtypes: Vec<String>;
-                if let Some(mut start_index) = value_type_name.find("[") {
-                    value_type_name = &value_type_name[..start_index];
-                    value_subtypes = self.subtypes(&subtypes[1].chars().collect(), &mut start_index)?;
-                } else {
-                    value_subtypes = Vec::new();
-                }
-                let value = self.make_data_type(value_type_name, &value_subtypes)?;
-                Ok(DataType::Dict(key, Box::new(value)))
-            },
-            other => Ok(DataType::Object(other.to_string()))
+            }
+            "dict" => self.make_dict_data_type(subtypes),
+            other => Ok(DataType::Object(other.to_string())),
         }
+    }
+
+    fn make_dict_data_type(&self, subtypes: &Vec<String>) -> Result<DataType, TypeDeclError> {
+        let key = self.make_primitive(&subtypes[0])?;
+        let mut value_type_name: &str = &subtypes[1];
+        let value_subtypes: Vec<String>;
+        if let Some(mut start_index) = value_type_name.find("[") {
+            value_type_name = &value_type_name[..start_index];
+            value_subtypes = self.subtypes(&subtypes[1].chars().collect(), &mut start_index)?;
+        } else {
+            value_subtypes = Vec::new();
+        }
+        let value = self.make_data_type(value_type_name, &value_subtypes)?;
+        Ok(DataType::Dict(key, Box::new(value)))
     }
 
     fn subtypes(&self, chars: &Vec<char>, index: &mut usize) -> Result<Vec<String>, TypeDeclError> {
@@ -206,7 +229,7 @@ impl<'a> TypeParser<'a> {
             "bool" => Ok(Primitive::Bool),
             "int" => Ok(Primitive::Int),
             "double" => Ok(Primitive::Double),
-            other => Err(TypeDeclError::UnsupportedPrimitive(other.to_string()))
+            other => Err(TypeDeclError::UnsupportedPrimitive(other.to_string())),
         }
     }
 }
@@ -214,24 +237,25 @@ impl<'a> TypeParser<'a> {
 impl TypeDeclError {
     fn default_fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
-            TypeDeclError::ImportFailure(import_error) =>
-                write!(f, "Import failed: {}", import_error.to_string()),
-            TypeDeclError::UnsupportedTypeDeclaration =>
-                write!(f, "This type declaration format is not supported."),
-            TypeDeclError::UnsupportedKeyType =>
-                write!(f, "Key type must be string."),
-            TypeDeclError::EmptyTypeDeclaration =>
-                write!(f, "Type declaration cannot be empty."),
-            TypeDeclError::SubtypeValuesEmptyDeclaration =>
-                write!(f, "Subtype declaration cannot be empty."),
-            TypeDeclError::UnsupportedPrimitive(value) =>
+            TypeDeclError::ImportFailure(import_error) => {
+                write!(f, "Import failed: {}", import_error.to_string())
+            }
+            TypeDeclError::UnsupportedTypeDeclaration => {
+                write!(f, "This type declaration format is not supported.")
+            }
+            TypeDeclError::UnsupportedKeyType => write!(f, "Key type must be string."),
+            TypeDeclError::EmptyTypeDeclaration => write!(f, "Type declaration cannot be empty."),
+            TypeDeclError::SubtypeValuesEmptyDeclaration => {
+                write!(f, "Subtype declaration cannot be empty.")
+            }
+            TypeDeclError::UnsupportedPrimitive(value) => {
                 write!(f, "Primitive {} not supported.", value)
+            }
         }
     }
 }
 
-impl Error for TypeDeclError {
-}
+impl Error for TypeDeclError {}
 
 impl Display for TypeDeclError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -241,20 +265,29 @@ impl Display for TypeDeclError {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        parser::types::TypeParser,
+        schema::{DataType, DataTypeDecl, Primitive, PropertyDecl, TypeDecl},
+    };
     use yaml_rust::Yaml;
-    use crate::{schema::{DataType, DataTypeDecl, TypeDecl, Primitive, PropertyDecl}, parser::types::TypeParser};
 
     #[test]
     fn make_data_type_decl_for_str() {
         let key = "key".to_string();
         let value = Yaml::String("str".to_string());
-        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser {
+            key: &key,
+            value: &yaml_rust::yaml::Hash::new(),
+        };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
             .unwrap_or_else(|_| panic!("Expect to have an OK result"));
 
-        let expected = DataTypeDecl { data_type: DataType::Primitive(Primitive::Str), is_required: true };
+        let expected = DataTypeDecl {
+            data_type: DataType::Primitive(Primitive::Str),
+            is_required: true,
+        };
         assert_eq!(expected, data_type_decl);
     }
 
@@ -262,13 +295,19 @@ mod tests {
     fn make_data_type_decl_for_optional_str() {
         let key = "key".to_string();
         let value = Yaml::String("str?".to_string());
-        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser {
+            key: &key,
+            value: &yaml_rust::yaml::Hash::new(),
+        };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
             .unwrap_or_else(|_| panic!("Expect to have an OK result"));
 
-        let expected = DataTypeDecl { data_type: DataType::Primitive(Primitive::Str), is_required: false };
+        let expected = DataTypeDecl {
+            data_type: DataType::Primitive(Primitive::Str),
+            is_required: false,
+        };
         assert_eq!(expected, data_type_decl);
     }
 
@@ -276,7 +315,10 @@ mod tests {
     fn make_data_type_decl_for_array() {
         let key = "key".to_string();
         let value = Yaml::String("array[int]".to_string());
-        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser {
+            key: &key,
+            value: &yaml_rust::yaml::Hash::new(),
+        };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
@@ -284,7 +326,7 @@ mod tests {
 
         let expected = DataTypeDecl {
             data_type: DataType::Array(Box::new(DataType::Primitive(Primitive::Int))),
-            is_required: true
+            is_required: true,
         };
         assert_eq!(expected, data_type_decl);
     }
@@ -293,7 +335,10 @@ mod tests {
     fn make_data_type_decl_for_optional_array() {
         let key = "key".to_string();
         let value = Yaml::String("array[int]?".to_string());
-        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser {
+            key: &key,
+            value: &yaml_rust::yaml::Hash::new(),
+        };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
@@ -301,7 +346,7 @@ mod tests {
 
         let expected = DataTypeDecl {
             data_type: DataType::Array(Box::new(DataType::Primitive(Primitive::Int))),
-            is_required: false
+            is_required: false,
         };
         assert_eq!(expected, data_type_decl);
     }
@@ -310,15 +355,21 @@ mod tests {
     fn make_data_type_decl_for_dict_with_primitives() {
         let key = "key".to_string();
         let value = Yaml::String("dict[int, str]?".to_string());
-        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser {
+            key: &key,
+            value: &yaml_rust::yaml::Hash::new(),
+        };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, "")
             .unwrap_or_else(|_| panic!("Expect to have an OK result"));
 
         let expected = DataTypeDecl {
-            data_type: DataType::Dict(Primitive::Int, Box::new(DataType::Primitive(Primitive::Str))),
-            is_required: false
+            data_type: DataType::Dict(
+                Primitive::Int,
+                Box::new(DataType::Primitive(Primitive::Str)),
+            ),
+            is_required: false,
         };
         assert_eq!(expected, data_type_decl);
     }
@@ -327,7 +378,10 @@ mod tests {
     fn make_data_type_decl_for_dict_with_another_data_type() {
         let key = "key".to_string();
         let value = Yaml::String("dict[int, array[user]]?".to_string());
-        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser {
+            key: &key,
+            value: &yaml_rust::yaml::Hash::new(),
+        };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, &key)
@@ -336,9 +390,11 @@ mod tests {
         let expected = DataTypeDecl {
             data_type: DataType::Dict(
                 Primitive::Int,
-                Box::new(DataType::Array(Box::new(DataType::Object("user".to_string()))))
+                Box::new(DataType::Array(Box::new(DataType::Object(
+                    "user".to_string(),
+                )))),
             ),
-            is_required: false
+            is_required: false,
         };
         assert_eq!(expected, data_type_decl);
     }
@@ -347,7 +403,10 @@ mod tests {
     fn make_data_type_decl_for_optional_object() {
         let key = "created_at".to_string();
         let value = Yaml::String("date?".to_string());
-        let parser = TypeParser { key: &key, value: &yaml_rust::yaml::Hash::new() };
+        let parser = TypeParser {
+            key: &key,
+            value: &yaml_rust::yaml::Hash::new(),
+        };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, &key)
@@ -355,7 +414,7 @@ mod tests {
 
         let expected = DataTypeDecl {
             data_type: DataType::Object("date".to_string()),
-            is_required: false
+            is_required: false,
         };
         assert_eq!(expected, data_type_decl);
     }
@@ -364,46 +423,56 @@ mod tests {
     fn make_data_type_decl_nested_declaration() {
         let key = "nested_object".to_string();
         let mut hash = yaml_rust::yaml::Hash::new();
-        hash.insert(Yaml::String("id".to_string()), Yaml::String("str".to_string()));
-        hash.insert(Yaml::String("updated_at".to_string()), Yaml::String("date".to_string()));
-        hash.insert(Yaml::String("is_active".to_string()), Yaml::String("bool".to_string()));
+        hash.insert(
+            Yaml::String("id".to_string()),
+            Yaml::String("str".to_string()),
+        );
+        hash.insert(
+            Yaml::String("updated_at".to_string()),
+            Yaml::String("date".to_string()),
+        );
+        hash.insert(
+            Yaml::String("is_active".to_string()),
+            Yaml::String("bool".to_string()),
+        );
         let value = Yaml::Hash(hash);
-        let parser = TypeParser { key: &key, value: &value.as_hash().unwrap() };
+        let parser = TypeParser {
+            key: &key,
+            value: &value.as_hash().unwrap(),
+        };
 
         let data_type_decl = parser
             .make_data_type_decl(&value, &key)
             .unwrap_or_else(|_| panic!("Expect to have an OK result"));
 
         let expected = DataTypeDecl {
-            data_type: DataType::ObjectDecl(
-                TypeDecl {
-                    name: "nested_object".to_string(),
-                    property_decls: Vec::from([
-                        PropertyDecl {
-                            name: "id".to_string(),
-                            data_type_decl: Ok(DataTypeDecl {
-                                data_type: DataType::Primitive(Primitive::Str),
-                                is_required: true
-                            })
-                        },
-                        PropertyDecl {
-                            name: "updated_at".to_string(),
-                            data_type_decl: Ok(DataTypeDecl {
-                                data_type: DataType::Object("date".to_string()),
-                                is_required: true
-                            })
-                        },
-                        PropertyDecl {
-                            name: "is_active".to_string(),
-                            data_type_decl: Ok(DataTypeDecl {
-                                data_type: DataType::Primitive(Primitive::Bool),
-                                is_required: true
-                            })
-                        }
-                    ])
-                }
-            ),
-            is_required: true
+            data_type: DataType::ObjectDecl(TypeDecl {
+                name: "nested_object".to_string(),
+                property_decls: Vec::from([
+                    PropertyDecl {
+                        name: "id".to_string(),
+                        data_type_decl: Ok(DataTypeDecl {
+                            data_type: DataType::Primitive(Primitive::Str),
+                            is_required: true,
+                        }),
+                    },
+                    PropertyDecl {
+                        name: "updated_at".to_string(),
+                        data_type_decl: Ok(DataTypeDecl {
+                            data_type: DataType::Object("date".to_string()),
+                            is_required: true,
+                        }),
+                    },
+                    PropertyDecl {
+                        name: "is_active".to_string(),
+                        data_type_decl: Ok(DataTypeDecl {
+                            data_type: DataType::Primitive(Primitive::Bool),
+                            is_required: true,
+                        }),
+                    },
+                ]),
+            }),
+            is_required: true,
         };
         assert_eq!(expected, data_type_decl);
     }
