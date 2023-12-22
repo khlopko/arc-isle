@@ -1,6 +1,6 @@
 // mod
 
-use std::{fmt::{Debug, Formatter, Display}, error::Error, collections::HashMap, iter::Map};
+use std::{fmt::{Debug, Formatter, Display}, error::Error, collections::HashMap};
 use crate::parser::utils::ReadError;
 
 pub struct Schema {
@@ -145,12 +145,12 @@ pub enum InterfaceSpec {
 
 #[derive(Debug, PartialEq)]
 pub struct ApiSpec {
-    pub method: HTTPMethod,
+    pub method: HttpMethod,
     pub payload: Option<HttpPayload>,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum HTTPMethod {
+pub enum HttpMethod {
     Get,
     Post,
     Put,
@@ -177,7 +177,9 @@ pub enum HttpPayload {
 #[derive(Debug, PartialEq)]
 pub enum InterfaceDeclError {
     ImportFailure(ImportError),
-    UnsupportedInterfaceDeclaration
+    UnsupportedInterfaceDeclaration,
+    BodyNotAllowed,
+    QueryNotAllowed,
 }
 
 impl Error for InterfaceDeclError {

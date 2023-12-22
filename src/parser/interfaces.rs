@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
 use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
 
 use crate::schema::{
-    ApiSpec, HTTPMethod, HttpPayload, InterfaceDecl, InterfaceDeclError, InterfaceDeclResults,
+    ApiSpec, HttpMethod, HttpPayload, InterfaceDecl, InterfaceDeclError, InterfaceDeclResults,
     InterfaceSpec,
 };
 
@@ -24,15 +22,24 @@ impl<'a> InterfacesParser<'a> {
         if let Ok(imports) = detect(&self.main, self.parent_path) {
             sources.extend(imports);
         }
-        let mut raw_decls: Vec<Result<Hash, InterfaceDeclError>> = Vec::new();
         let mut results = Vec::new();
         for source in sources {
             match source {
-                Ok(source) => raw_decls.extend(self.from_file(&source).unwrap()),
-                Err(err) => results.push(Err(InterfaceDeclError::ImportFailure(err))),
+                Ok(source) => {
+                    let raw = self.from_file(&source).unwrap();
+                    for item in raw {
+                        match item {
+                            Ok(item) => {
+                                let decl = parse_declaration(&item);
+                                results.push(decl);
+                            }
+                            Err(err) => results.push(Err(err)),
+                        }
+                    }
+                }
+                Err(err) => results.push(Err(InterfaceDeclError::ImportFailure(err)))
             }
         }
-        println!("raw_decls = {:?}", raw_decls);
         results
     }
 
@@ -73,52 +80,114 @@ impl<'a> InterfacesParser<'a> {
 }
 
 fn parse_declaration(hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
-    let ident = hash[&Yaml::from_str("path")]
-        .as_str()
-        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?
-        .to_string();
-    let raw_method = hash[&Yaml::from_str("method")]
-        .as_str()
-        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
-    let method = map_raw_method(raw_method)?;
-    let query_key = key_from("query");
-    let mut payload = None;
-    if hash.contains_key(&query_key) {
-        let raw_query = hash[&query_key]
-            .as_hash()
-            .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
-        let parser = TypeParser {
-            key: &query_key.as_str().unwrap(),
-            value: raw_query,
-        };
-        let query = parser
-            .parse()
-            .map_err(|_| InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
-        let payload_value = HttpPayload::Query(query.property_decls);
-        payload = Some(payload_value);
-    }
+    let ident = get_ident(hash)?;
+    let method = get_method(hash)?;
+    let payload = get_payload(&method, &hash)?;
     let api_spec = ApiSpec { method, payload };
     let spec = InterfaceSpec::Api(api_spec);
     let decl = InterfaceDecl { ident, spec };
     Ok(decl)
 }
 
-fn key_from(value: &str) -> Yaml {
-    Yaml::from_str(value)
+fn get_ident(hash: &Hash) -> Result<String, InterfaceDeclError> {
+    Ok(hash[&Yaml::from_str("path")]
+        .as_str()
+        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?
+        .to_string())
 }
 
-fn map_raw_method(raw_method: &str) -> Result<HTTPMethod, InterfaceDeclError> {
+fn get_method(hash: &Hash) -> Result<HttpMethod, InterfaceDeclError> {
+    let raw_method = hash[&Yaml::from_str("method")]
+        .as_str()
+        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
     match raw_method {
-        "get" => Ok(HTTPMethod::Get),
-        "post" => Ok(HTTPMethod::Post),
-        "put" => Ok(HTTPMethod::Put),
-        "delete" => Ok(HTTPMethod::Delete),
-        /*"head" => Ok(HTTPMethod::Head),
-        "options" => Ok(HTTPMethod::Options),
-        "trace" => Ok(HTTPMethod::Trace),
-        "connect" => Ok(HTTPMethod::Connect),*/
+        "get" => Ok(HttpMethod::Get),
+        "post" => Ok(HttpMethod::Post),
+        "put" => Ok(HttpMethod::Put),
+        "delete" => Ok(HttpMethod::Delete),
+        /*"head" => Ok(HttpMethod::Head),
+        "options" => Ok(HttpMethod::Options),
+        "trace" => Ok(HttpMethod::Trace),
+        "connect" => Ok(HttpMethod::Connect),*/
         _ => Err(InterfaceDeclError::UnsupportedInterfaceDeclaration),
     }
+}
+
+fn get_payload(
+    method: &HttpMethod,
+    hash: &Hash,
+) -> Result<Option<HttpPayload>, InterfaceDeclError> {
+    match method {
+        HttpMethod::Get => {
+            if hash.contains_key(&key_from("body")) {
+                return Err(InterfaceDeclError::BodyNotAllowed);
+            }
+            return get_query_if_has(hash);
+        }
+        HttpMethod::Post => {
+            if hash.contains_key(&key_from("query")) {
+                return Err(InterfaceDeclError::QueryNotAllowed);
+            }
+            return get_body_if_has(hash);
+        }
+        HttpMethod::Put => {
+            if hash.contains_key(&key_from("query")) {
+                return Err(InterfaceDeclError::QueryNotAllowed);
+            }
+            return get_body_if_has(hash);
+        }
+        HttpMethod::Delete => {
+            if hash.contains_key(&key_from("query")) {
+                return Err(InterfaceDeclError::QueryNotAllowed);
+            }
+            if hash.contains_key(&key_from("body")) {
+                return Err(InterfaceDeclError::BodyNotAllowed);
+            }
+            return Ok(None);
+        }
+    }
+}
+
+fn get_query_if_has(hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
+    let query_key = key_from("query");
+    if !hash.contains_key(&query_key) {
+        return Ok(None);
+    }
+    let raw_query = hash[&query_key]
+        .as_hash()
+        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
+    let parser = TypeParser {
+        key: &query_key.as_str().unwrap(),
+        value: raw_query,
+    };
+    let query = parser
+        .parse()
+        .map_err(|_| InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
+    let payload_value = HttpPayload::Query(query.property_decls);
+    Ok(Some(payload_value))
+}
+
+fn get_body_if_has(hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
+    let body_key = key_from("body");
+    if !hash.contains_key(&body_key) {
+        return Ok(None);
+    }
+    let raw_body = hash[&body_key]
+        .as_hash()
+        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
+    let parser = TypeParser {
+        key: &body_key.as_str().unwrap(),
+        value: raw_body,
+    };
+    let body = parser
+        .parse()
+        .map_err(|_| InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
+    let payload_value = HttpPayload::Body(body.property_decls);
+    Ok(Some(payload_value))
+}
+
+fn key_from(value: &str) -> Yaml {
+    Yaml::from_str(value)
 }
 
 #[cfg(test)]
@@ -126,10 +195,10 @@ mod tests {
     use yaml_rust::yaml::Hash;
     use yaml_rust::Yaml;
 
-    use crate::schema::{ApiSpec, HTTPMethod, InterfaceDecl, InterfaceSpec};
+    use crate::schema::{ApiSpec, HttpMethod, InterfaceDecl, InterfaceSpec, PropertyDecl};
 
     #[test]
-    fn make_simplest_get() {
+    fn minimal_get() {
         let mut hash = Hash::new();
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("get"));
@@ -140,10 +209,70 @@ mod tests {
             Ok(InterfaceDecl {
                 ident: "news".to_string(),
                 spec: InterfaceSpec::Api(ApiSpec {
-                    method: HTTPMethod::Get,
+                    method: HttpMethod::Get,
                     payload: None,
                 }),
             }),
+            result
+        );
+    }
+
+    #[test]
+    fn get_with_query() {
+        let mut hash = Hash::new();
+        hash.insert(Yaml::from_str("path"), Yaml::from_str("news"));
+        hash.insert(Yaml::from_str("method"), Yaml::from_str("get"));
+        let mut query = Hash::new();
+        query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
+        query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
+        hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
+
+        let result = super::parse_declaration(&hash);
+
+        assert_eq!(
+            Ok(InterfaceDecl {
+                ident: "news".to_string(),
+                spec: InterfaceSpec::Api(ApiSpec {
+                    method: HttpMethod::Get,
+                    payload: Some(super::HttpPayload::Query(vec![
+                        PropertyDecl {
+                            name: "page".to_string(),
+                            data_type_decl: Ok(crate::schema::DataTypeDecl {
+                                data_type: crate::schema::DataType::Primitive(
+                                    crate::schema::Primitive::Int
+                                ),
+                                is_required: true
+                            })
+                        },
+                        PropertyDecl {
+                            name: "limit".to_string(),
+                            data_type_decl: Ok(crate::schema::DataTypeDecl {
+                                data_type: crate::schema::DataType::Primitive(
+                                    crate::schema::Primitive::Int
+                                ),
+                                is_required: false
+                            })
+                        }
+                    ])),
+                }),
+            }),
+            result
+        );
+    }
+
+    #[test]
+    fn body_prohibited_on_get() {
+        let mut hash = Hash::new();
+        hash.insert(Yaml::from_str("path"), Yaml::from_str("news"));
+        hash.insert(Yaml::from_str("method"), Yaml::from_str("get"));
+        let mut body = Hash::new();
+        body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
+        hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
+
+        let result = super::parse_declaration(&hash);
+
+        assert_eq!(
+            Err(crate::schema::InterfaceDeclError::BodyNotAllowed),
             result
         );
     }
@@ -160,10 +289,59 @@ mod tests {
             Ok(InterfaceDecl {
                 ident: "news/post".to_string(),
                 spec: InterfaceSpec::Api(ApiSpec {
-                    method: HTTPMethod::Post,
+                    method: HttpMethod::Post,
                     payload: None,
                 }),
             }),
+            result
+        );
+    }
+
+    #[test]
+    fn post_with_body() {
+        let mut hash = Hash::new();
+        hash.insert(Yaml::from_str("path"), Yaml::from_str("news/post"));
+        hash.insert(Yaml::from_str("method"), Yaml::from_str("post"));
+        let mut body = Hash::new();
+        body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
+        hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
+
+        let result = super::parse_declaration(&hash);
+
+        assert_eq!(
+            Ok(InterfaceDecl {
+                ident: "news/post".to_string(),
+                spec: InterfaceSpec::Api(ApiSpec {
+                    method: HttpMethod::Post,
+                    payload: Some(super::HttpPayload::Body(vec![PropertyDecl {
+                        name: "title".to_string(),
+                        data_type_decl: Ok(crate::schema::DataTypeDecl {
+                            data_type: crate::schema::DataType::Primitive(
+                                crate::schema::Primitive::Str
+                            ),
+                            is_required: true
+                        })
+                    }])),
+                }),
+            }),
+            result
+        );
+    }
+
+    #[test]
+    fn not_allowed_post_with_query() {
+        let mut hash = Hash::new();
+        hash.insert(Yaml::from_str("path"), Yaml::from_str("news/post"));
+        hash.insert(Yaml::from_str("method"), Yaml::from_str("post"));
+        let mut query = Hash::new();
+        query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
+        query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
+        hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
+
+        let result = super::parse_declaration(&hash);
+
+        assert_eq!(
+            Err(crate::schema::InterfaceDeclError::QueryNotAllowed),
             result
         );
     }
@@ -180,7 +358,7 @@ mod tests {
             Ok(InterfaceDecl {
                 ident: "news/post".to_string(),
                 spec: InterfaceSpec::Api(ApiSpec {
-                    method: HTTPMethod::Put,
+                    method: HttpMethod::Put,
                     payload: None,
                 }),
             }),
@@ -203,10 +381,51 @@ mod tests {
             Ok(InterfaceDecl {
                 ident: "news/post/{post_id}".to_string(),
                 spec: InterfaceSpec::Api(ApiSpec {
-                    method: HTTPMethod::Delete,
+                    method: HttpMethod::Delete,
                     payload: None,
                 }),
             }),
+            result
+        );
+    }
+
+    #[test]
+    fn not_allowed_delete_with_query() {
+        let mut hash = Hash::new();
+        hash.insert(
+            Yaml::from_str("path"),
+            Yaml::from_str("news/post/{post_id}"),
+        );
+        hash.insert(Yaml::from_str("method"), Yaml::from_str("delete"));
+        let mut query = Hash::new();
+        query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
+        query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
+        hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
+
+        let result = super::parse_declaration(&hash);
+
+        assert_eq!(
+            Err(crate::schema::InterfaceDeclError::QueryNotAllowed),
+            result
+        );
+    }
+
+    #[test]
+    fn not_allowed_delete_with_body() {
+        let mut hash = Hash::new();
+        hash.insert(
+            Yaml::from_str("path"),
+            Yaml::from_str("news/post/{post_id}"),
+        );
+        hash.insert(Yaml::from_str("method"), Yaml::from_str("delete"));
+        let mut body = Hash::new();
+        body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
+        hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
+
+        let result = super::parse_declaration(&hash);
+
+        assert_eq!(
+            Err(crate::schema::InterfaceDeclError::BodyNotAllowed),
             result
         );
     }
