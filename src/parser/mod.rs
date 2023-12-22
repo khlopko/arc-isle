@@ -1,3 +1,10 @@
+pub(crate) mod utils;
+mod hosts;
+mod versioning;
+mod imports;
+mod types;
+mod interfaces;
+
 use crate::parser::hosts::HostsParser;
 use crate::parser::imports::detect;
 use crate::parser::types::TypesParser;
