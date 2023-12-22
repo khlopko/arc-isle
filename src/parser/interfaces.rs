@@ -8,75 +8,69 @@ use crate::schema::{
 
 use super::{imports::detect, types::TypeParser};
 
-pub struct InterfacesParser<'a> {
-    pub main: &'a Yaml,
-    pub parent_path: &'a str,
-}
-
-impl<'a> InterfacesParser<'a> {
-    const FILTER_KEY: &'static str = "_import";
-
-    pub fn parse(&self) -> InterfaceDeclResults {
-        let mut sources = Vec::new();
-        sources.push(Ok(self.main.clone()));
-        if let Ok(imports) = detect(&self.main, self.parent_path) {
-            sources.extend(imports);
-        }
-        let mut results = Vec::new();
-        for source in sources {
-            match source {
-                Ok(source) => {
-                    let raw = self.from_file(&source).unwrap();
-                    for item in raw {
-                        match item {
-                            Ok(item) => {
-                                let decl = parse_declaration(&item);
-                                results.push(decl);
+pub fn parse(main: &Yaml, parent_path: &str) -> InterfaceDeclResults {
+    let mut sources = Vec::new();
+    sources.push(Ok(main.clone()));
+    if let Ok(imports) = detect(&main, parent_path) {
+        sources.extend(imports);
+    }
+    let mut results = Vec::new();
+    for source in sources {
+        match source {
+            Ok(source) => {
+                let raw = from_file(&source).unwrap();
+                for item in raw {
+                    match item {
+                        Ok(item) => {
+                            if item.contains_key(&key_from("_import")) {
+                                continue;
                             }
-                            Err(err) => results.push(Err(err)),
+                            let decl = parse_declaration(&item);
+                            results.push(decl);
                         }
+                        Err(err) => results.push(Err(err)),
                     }
                 }
-                Err(err) => results.push(Err(InterfaceDeclError::ImportFailure(err)))
             }
+            Err(err) => results.push(Err(InterfaceDeclError::ImportFailure(err))),
         }
-        results
     }
+    results
+}
 
-    fn from_file(&self, source: &Yaml) -> Result<Vec<Result<Hash, InterfaceDeclError>>, String> {
-        if let Some(source) = source.as_vec() {
-            return Ok(source.iter().map(|item| self.read_decl(item)).collect());
-        }
-        if let Some(source) = source.as_hash() {
-            return Ok(self.from_hash(source));
-        }
-        Err("invalid source".to_string())
+fn from_file(source: &Yaml) -> Result<Vec<Result<Hash, InterfaceDeclError>>, String> {
+    if let Some(source) = source.as_vec() {
+        return Ok(source.iter().map(|item| read_decl(item)).collect());
     }
+    if let Some(source) = source.as_hash() {
+        return Ok(from_hash(source));
+    }
+    Err("invalid source".to_string())
+}
 
-    fn from_hash(&self, source: &Hash) -> Vec<Result<Hash, InterfaceDeclError>> {
-        let key = Yaml::from_str("declarations");
-        source[&key]
-            .as_vec()
-            .unwrap()
-            .iter()
-            .map(|item| self.read_decl(item))
-            .filter(|item| self.is_import(item))
-            .collect()
-    }
+fn from_hash(source: &Hash) -> Vec<Result<Hash, InterfaceDeclError>> {
+    let key = Yaml::from_str("declarations");
+    source[&key]
+        .as_vec()
+        .unwrap()
+        .iter()
+        .map(|item| read_decl(item))
+        .filter(|item| is_import(item))
+        .collect()
+}
 
-    fn read_decl(&self, item: &Yaml) -> Result<Hash, InterfaceDeclError> {
-        item.as_hash()
-            .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)
-            .cloned()
-    }
+fn read_decl(item: &Yaml) -> Result<Hash, InterfaceDeclError> {
+    item.as_hash()
+        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)
+        .cloned()
+}
 
-    fn is_import(&self, item: &Result<Hash, InterfaceDeclError>) -> bool {
-        if item.is_err() {
-            return false;
-        }
-        item.as_ref()
-            .is_ok_and(|val| !val.contains_key(&Yaml::from_str(InterfacesParser::FILTER_KEY)))
+fn is_import(item: &Result<Hash, InterfaceDeclError>) -> bool {
+    if item.is_err() {
+        return false;
     }
+    item.as_ref()
+        .is_ok_and(|val| !val.contains_key(&Yaml::from_str("_import")))
 }
 
 fn parse_declaration(hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
@@ -90,6 +84,7 @@ fn parse_declaration(hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
 }
 
 fn get_ident(hash: &Hash) -> Result<String, InterfaceDeclError> {
+    println!("hash: {:?}", hash);
     Ok(hash[&Yaml::from_str("path")]
         .as_str()
         .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?

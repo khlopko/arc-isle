@@ -1,17 +1,10 @@
-pub(crate) mod utils;
-mod hosts;
-mod versioning;
-mod imports;
-mod types;
-mod interfaces;
-
 use crate::parser::hosts::HostsParser;
 use crate::parser::imports::detect;
 use crate::parser::types::TypesParser;
 use crate::parser::{utils::read_yaml, versioning::VersioningParser};
 use crate::schema::Schema;
 
-use self::interfaces::InterfacesParser;
+use self::interfaces::parse as parse_interfaces;
 
 pub fn parse(file_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
     let yaml = read_yaml(file_path)?;
@@ -30,8 +23,7 @@ pub fn parse(file_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
 
     let interfaces_imports = detect(&main["interfaces"], "example")?;
     let interfaces_main = &interfaces_imports[0].as_ref().unwrap();
-    let interfaces_parser = InterfacesParser { main: &interfaces_main, parent_path: "example" };
-    let interfaces = interfaces_parser.parse();
+    let interfaces = parse_interfaces(&interfaces_main, "example");
 
     let schema = Schema { hosts, versioning, types, interfaces };
 
