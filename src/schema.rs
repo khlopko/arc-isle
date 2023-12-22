@@ -147,6 +147,7 @@ pub enum InterfaceSpec {
 pub struct ApiSpec {
     pub method: HttpMethod,
     pub payload: Option<HttpPayload>,
+    pub response: Option<Vec<PropertyDecl>>
 }
 
 #[derive(Debug, PartialEq)]
@@ -155,17 +156,6 @@ pub enum HttpMethod {
     Post,
     Put,
     Delete
-}
-
-#[derive(Debug, PartialEq)]
-enum JsonValue {
-    Null,
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    Str(String),
-    Array(Vec<JsonValue>),
-    Object(HashMap<String, JsonValue>),
 }
 
 #[derive(Debug, PartialEq)]

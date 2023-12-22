@@ -77,7 +77,7 @@ fn parse_declaration(hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
     let ident = get_ident(hash)?;
     let method = get_method(hash)?;
     let payload = get_payload(&method, &hash)?;
-    let api_spec = ApiSpec { method, payload };
+    let api_spec = ApiSpec { method, payload, response: None };
     let spec = InterfaceSpec::Api(api_spec);
     let decl = InterfaceDecl { ident, spec };
     Ok(decl)
@@ -206,6 +206,7 @@ mod tests {
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Get,
                     payload: None,
+                    response: None,
                 }),
             }),
             result
@@ -249,6 +250,7 @@ mod tests {
                             })
                         }
                     ])),
+                    response: None,
                 }),
             }),
             result
@@ -286,6 +288,7 @@ mod tests {
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Post,
                     payload: None,
+                    response: None,
                 }),
             }),
             result
@@ -317,6 +320,7 @@ mod tests {
                             is_required: true
                         })
                     }])),
+                    response: None,
                 }),
             }),
             result
@@ -355,6 +359,7 @@ mod tests {
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Put,
                     payload: None,
+                    response: None,
                 }),
             }),
             result
@@ -378,6 +383,7 @@ mod tests {
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Delete,
                     payload: None,
+                    response: None,
                 }),
             }),
             result
