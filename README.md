@@ -194,3 +194,12 @@ An advanced scenario is when we want to define custom responses for different ca
 You can specify either concrete status code, like `200` or `501` in example above, or pattern for a family of status codes, like `4xx` and `5xx`, and you can combine both styles.
 
 By default `2xx` family is assumed if response field does not specify any code.
+
+# Future
+
+These items are yet neither implemented nor designed:
+
+[] Different route versions
+[] Default response code guess
+[] Mix types and routes declaration
+
