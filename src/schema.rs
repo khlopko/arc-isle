@@ -135,6 +135,7 @@ pub type InterfaceDeclResults = Vec<Result<InterfaceDecl, InterfaceDeclError>>;
 #[derive(Debug, PartialEq)]
 pub struct InterfaceDecl {
     pub ident: String,
+    pub params: Vec<String>,
     pub spec: InterfaceSpec
 }
 

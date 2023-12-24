@@ -75,11 +75,32 @@ fn is_import(item: &Result<Hash, InterfaceDeclError>) -> bool {
 
 fn parse_declaration(hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
     let ident = get_ident(hash)?;
+    let mut params = Vec::new();
+    let mut param = String::new();
+    let mut reading_param = false;
+    for c in ident.chars() {
+        if c == '{' {
+            reading_param = true;
+            continue;
+        }
+        if c == '}' {
+            reading_param = false;
+            if param.is_empty() {
+                return Err(InterfaceDeclError::UnsupportedInterfaceDeclaration);
+            }
+            params.push(param.clone());
+            param.clear();
+            continue;
+        }
+        if reading_param {
+            param.push(c);
+        }
+    }
     let method = get_method(hash)?;
     let payload = get_payload(&method, &hash)?;
     let api_spec = ApiSpec { method, payload, response: None };
     let spec = InterfaceSpec::Api(api_spec);
-    let decl = InterfaceDecl { ident, spec };
+    let decl = InterfaceDecl { ident, params, spec };
     Ok(decl)
 }
 
