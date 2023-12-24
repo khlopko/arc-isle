@@ -224,6 +224,7 @@ mod tests {
         assert_eq!(
             Ok(InterfaceDecl {
                 ident: "news".to_string(),
+                params: vec![],
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Get,
                     payload: None,
@@ -249,6 +250,7 @@ mod tests {
         assert_eq!(
             Ok(InterfaceDecl {
                 ident: "news".to_string(),
+                params: vec![],
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Get,
                     payload: Some(super::HttpPayload::Query(vec![
@@ -306,6 +308,7 @@ mod tests {
         assert_eq!(
             Ok(InterfaceDecl {
                 ident: "news/post".to_string(),
+                params: vec![],
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Post,
                     payload: None,
@@ -330,6 +333,7 @@ mod tests {
         assert_eq!(
             Ok(InterfaceDecl {
                 ident: "news/post".to_string(),
+                params: vec![],
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Post,
                     payload: Some(super::HttpPayload::Body(vec![PropertyDecl {
@@ -377,6 +381,7 @@ mod tests {
         assert_eq!(
             Ok(InterfaceDecl {
                 ident: "news/post".to_string(),
+                params: vec![],
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Put,
                     payload: None,
@@ -401,6 +406,7 @@ mod tests {
         assert_eq!(
             Ok(InterfaceDecl {
                 ident: "news/post/{post_id}".to_string(),
+                params: vec!["post_id".to_string()],
                 spec: InterfaceSpec::Api(ApiSpec {
                     method: HttpMethod::Delete,
                     payload: None,
