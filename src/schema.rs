@@ -156,7 +156,9 @@ pub enum HttpMethod {
     Get,
     Post,
     Put,
-    Delete
+    Delete,
+    Patch,
+    Head,
 }
 
 #[derive(Debug, PartialEq)]

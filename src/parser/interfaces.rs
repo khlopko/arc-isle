@@ -127,8 +127,9 @@ fn get_method(hash: &Hash) -> Result<HttpMethod, InterfaceDeclError> {
         "post" => Ok(HttpMethod::Post),
         "put" => Ok(HttpMethod::Put),
         "delete" => Ok(HttpMethod::Delete),
-        /*"head" => Ok(HttpMethod::Head),
-        "options" => Ok(HttpMethod::Options),
+        "head" => Ok(HttpMethod::Head),
+        "patch" => Ok(HttpMethod::Patch),
+        /*"options" => Ok(HttpMethod::Options),
         "trace" => Ok(HttpMethod::Trace),
         "connect" => Ok(HttpMethod::Connect),*/
         _ => Err(InterfaceDeclError::UnsupportedInterfaceDeclaration),
@@ -140,19 +141,13 @@ fn get_payload(
     hash: &Hash,
 ) -> Result<Option<HttpPayload>, InterfaceDeclError> {
     match method {
-        HttpMethod::Get => {
+        HttpMethod::Get | HttpMethod::Head => {
             if hash.contains_key(&key_from("body")) {
                 return Err(InterfaceDeclError::BodyNotAllowed);
             }
             return get_query_if_has(hash);
         }
-        HttpMethod::Post => {
-            if hash.contains_key(&key_from("query")) {
-                return Err(InterfaceDeclError::QueryNotAllowed);
-            }
-            return get_body_if_has(hash);
-        }
-        HttpMethod::Put => {
+        HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch => {
             if hash.contains_key(&key_from("query")) {
                 return Err(InterfaceDeclError::QueryNotAllowed);
             }
