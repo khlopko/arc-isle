@@ -3,7 +3,7 @@ use yaml_rust::Yaml;
 
 use crate::schema::{
     ApiSpec, HttpMethod, HttpPayload, InterfaceDecl, InterfaceDeclError, InterfaceDeclResults,
-    InterfaceSpec,
+    InterfaceSpec, PropertyDecl,
 };
 
 use super::{imports::detect, types::TypeParser};
@@ -75,6 +75,25 @@ fn is_import(item: &Result<Hash, InterfaceDeclError>) -> bool {
 
 fn parse_declaration(hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
     let ident = get_ident(hash)?;
+    let params = get_params(&ident)?;
+    let method = get_method(hash)?;
+    let payload = get_payload(&method, &hash)?;
+    let response = get_response(&hash)?;
+    let api_spec = ApiSpec { method, payload, response };
+    let spec = InterfaceSpec::Api(api_spec);
+    let decl = InterfaceDecl { ident, params, spec };
+    Ok(decl)
+}
+
+fn get_ident(hash: &Hash) -> Result<String, InterfaceDeclError> {
+    println!("hash: {:?}", hash);
+    Ok(hash[&Yaml::from_str("path")]
+        .as_str()
+        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?
+        .to_string())
+}
+
+fn get_params(ident: &str) -> Result<Vec<String>, InterfaceDeclError> {
     let mut params = Vec::new();
     let mut param = String::new();
     let mut reading_param = false;
@@ -96,20 +115,7 @@ fn parse_declaration(hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
             param.push(c);
         }
     }
-    let method = get_method(hash)?;
-    let payload = get_payload(&method, &hash)?;
-    let api_spec = ApiSpec { method, payload, response: None };
-    let spec = InterfaceSpec::Api(api_spec);
-    let decl = InterfaceDecl { ident, params, spec };
-    Ok(decl)
-}
-
-fn get_ident(hash: &Hash) -> Result<String, InterfaceDeclError> {
-    println!("hash: {:?}", hash);
-    Ok(hash[&Yaml::from_str("path")]
-        .as_str()
-        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?
-        .to_string())
+    Ok(params)
 }
 
 fn get_method(hash: &Hash) -> Result<HttpMethod, InterfaceDeclError> {
@@ -200,6 +206,24 @@ fn get_body_if_has(hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclErro
         .map_err(|_| InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
     let payload_value = HttpPayload::Body(body.property_decls);
     Ok(Some(payload_value))
+}
+
+fn get_response(hash: &Hash) -> Result<Option<Vec<PropertyDecl>>, InterfaceDeclError> {
+    let response_key = key_from("response");
+    if !hash.contains_key(&response_key) {
+        return Ok(None);
+    }
+    let raw_response = hash[&response_key]
+        .as_hash()
+        .ok_or(InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
+    let parser = TypeParser {
+        key: &response_key.as_str().unwrap(),
+        value: raw_response,
+    };
+    let response = parser
+        .parse()
+        .map_err(|_| InterfaceDeclError::UnsupportedInterfaceDeclaration)?;
+    Ok(Some(response.property_decls))
 }
 
 fn key_from(value: &str) -> Yaml {
