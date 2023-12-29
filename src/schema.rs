@@ -42,7 +42,7 @@ pub struct Versioning {
 
 pub type TypeDeclResults = Vec<Result<TypeDecl, TypeDeclError>>;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct TypeDecl {
     pub name: String,
     pub property_decls: Vec<PropertyDecl>
@@ -59,13 +59,13 @@ impl Debug for TypeDecl {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PropertyDecl {
     pub name: String,
     pub data_type_decl: Result<DataTypeDecl, TypeDeclError>
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TypeDeclError {
     ImportFailure(ImportError),
     UnsupportedTypeDeclaration,
@@ -75,13 +75,13 @@ pub enum TypeDeclError {
     UnsupportedPrimitive(String)
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DataTypeDecl {
     pub data_type: DataType,
     pub is_required: bool
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum DataType {
     Primitive(Primitive),
     Array(Box<DataType>),
@@ -90,7 +90,7 @@ pub enum DataType {
     ObjectDecl(TypeDecl)
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Primitive {
     Int,
     Double,
@@ -98,6 +98,7 @@ pub enum Primitive {
     Str
 }
 
+#[derive(Clone)]
 pub enum ImportError {
     IOError(ReadError),
     InvalidInputSource,
@@ -108,12 +109,8 @@ impl PartialEq for ImportError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (
-                ImportError::IOError(either::Either::Left(_)),
-                ImportError::IOError(either::Either::Left(_))
-            ) => true,
-            (
-                ImportError::IOError(either::Either::Right(lhs)),
-                ImportError::IOError(either::Either::Right(rhs))
+                ImportError::IOError(lhs),
+                ImportError::IOError(rhs)
             ) => lhs == rhs,
             (
                 ImportError::InvalidInputSource,
@@ -148,7 +145,15 @@ pub enum InterfaceSpec {
 pub struct ApiSpec {
     pub method: HttpMethod,
     pub payload: Option<HttpPayload>,
-    pub response: Option<Vec<PropertyDecl>>
+    pub responses: HttpResponses
+}
+
+pub type HttpResponses = Option<HashMap<StatusCode, TypeDecl>>;
+
+#[derive(Eq, Hash, PartialEq, Debug)]
+pub enum StatusCode {
+    Fixed(u16),
+    Prefix(u16),
 }
 
 #[derive(Debug, PartialEq)]
@@ -173,6 +178,18 @@ pub enum InterfaceDeclError {
     UnsupportedInterfaceDeclaration,
     BodyNotAllowed,
     QueryNotAllowed,
+    InvalidKey,
+    InvalidStatusCode,
+    TypeNotFound(String),
+    InvalidResponseDeclaration,
+    InvalidInterfaceDeclaration,
+    InvalidIdent,
+    EmptyParam,
+    InvalidMethod,
+    InvalidQuery,
+    InvalidBody,
+    InvalidResponseValue,
+    InvalidResponseTypeDeclaration,
 }
 
 impl Error for InterfaceDeclError {

@@ -30,7 +30,7 @@ pub fn parse(file_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
 
     let interfaces_imports = detect(&main["interfaces"], "example")?;
     let interfaces_main = &interfaces_imports[0].as_ref().unwrap();
-    let interfaces = parse_interfaces(&interfaces_main, "example");
+    let interfaces = parse_interfaces(&interfaces_main, "example", &types);
 
     let schema = Schema { hosts, versioning, types, interfaces };
 

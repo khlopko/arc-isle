@@ -1,15 +1,47 @@
-use std::{fs, io};
+use std::{fs, io, ops::Deref};
 use yaml_rust::{Yaml, YamlEmitter, YamlLoader};
 
 pub type YamlHash = yaml_rust::yaml::Hash;
 
-pub type ReadError = either::Either<io::Error, yaml_rust::ScanError>;
+#[derive(Debug)]
+pub struct ReadError {
+    pub internal_error: either::Either<io::Error, yaml_rust::ScanError>
+}
+
+impl std::error::Error for ReadError {
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
+impl PartialEq for ReadError {
+    fn eq(&self, other: &ReadError) -> bool {
+        match (&self.internal_error, &other.internal_error) {
+            (either::Either::Left(_), either::Either::Left(_)) => true,
+            (either::Either::Right(lhs), either::Either::Right(rhs)) => lhs == rhs,
+            _ => false
+        }
+    }
+}
+
+impl Clone for ReadError {
+    fn clone(&self) -> Self {
+        let internal_error = match &self.internal_error {
+            either::Either::Left(err) => either::Either::Left(io::Error::new(err.kind(), err.to_string())),
+            either::Either::Right(err) => either::Either::Right(err.clone())
+        };
+        Self { internal_error }
+    }
+}
 
 pub fn read_yaml(file_path: &str) -> Result<Vec<Yaml>, ReadError> {
     let file_contents = fs::read_to_string(file_path)
-        .map_err(|err| either::Either::Left(err))?;
+        .map_err(|err| ReadError { internal_error: either::Either::Left(err) })?;
     let yaml: Vec<Yaml> = YamlLoader::load_from_str(&file_contents)
-        .map_err(|err| either::Either::Right(err))?;
+        .map_err(|err| ReadError { internal_error: either::Either::Right(err) })?;
     Ok(yaml)
 }
 
