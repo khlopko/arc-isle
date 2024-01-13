@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref};
+use std::collections::HashMap;
 
 use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
@@ -10,47 +10,176 @@ use crate::schema::{
 
 use super::{imports::detect, types::TypeParser};
 
-pub fn parse(main: &Yaml, parent_path: &str, type_decls: &TypeDeclResults) -> InterfaceDeclResults {
-    let mut sources = Vec::new();
-    sources.push(Ok(main.clone()));
-    if let Ok(imports) = detect(&main, parent_path) {
-        sources.extend(imports);
-    }
-    let type_decls = known_types(type_decls);
-    let mut results = Vec::new();
-    for source in sources {
-        match source {
-            Ok(source) => {
-                let raw = from_file(&source).unwrap();
-                for item in raw {
-                    match item {
-                        Ok(item) => {
-                            if item.contains_key(&key_from("_import")) {
-                                continue;
-                            }
-                            let decl = parse_declaration(&item, &type_decls);
-                            results.push(decl);
-                        }
-                        Err(err) => results.push(Err(err)),
-                    }
-                }
-            }
-            Err(err) => results.push(Err(InterfaceDeclError::ImportFailure(err))),
-        }
-    }
-    results
-}
-
 type KnownTypes<'a> = HashMap<&'a String, &'a TypeDecl>;
 
-fn known_types(type_decls: &TypeDeclResults) -> KnownTypes {
-    let pairs = type_decls.iter().filter_map(|item| {
-        if let Ok(item) = item {
-            return Some((&item.name, item));
+pub struct InterfacesParser<'a> {
+    main: &'a Yaml,
+    parent_path: &'a str,
+    known_types: KnownTypes<'a>
+}
+
+impl<'a> InterfacesParser<'a> {
+
+    pub fn new(main: &'a Yaml, parent_path: &'a str, type_decls: &'a TypeDeclResults) -> InterfacesParser<'a> {
+        let pairs = type_decls.iter().filter_map(|item| {
+            if let Ok(item) = item {
+                return Some((&item.name, item));
+            }
+            None
+        });
+        let known_types = HashMap::from_iter(pairs);
+        InterfacesParser {
+            main, parent_path, known_types
         }
-        None
-    });
-    HashMap::from_iter(pairs)
+    }
+
+    pub fn parse(&self) -> InterfaceDeclResults {
+        let mut sources = Vec::new();
+        sources.push(Ok(self.main.clone()));
+        if let Ok(imports) = detect(&self.main, self.parent_path) {
+            sources.extend(imports);
+        }
+        let mut results = Vec::new();
+        let interface_parser = InterfaceParser { known_types: &self.known_types };
+        for source in sources {
+            match source {
+                Ok(source) => {
+                    let raw = from_file(&source).unwrap();
+                    for item in raw {
+                        match item {
+                            Ok(item) => {
+                                if item.contains_key(&key_from("_import")) {
+                                    continue;
+                                }
+                                let decl = interface_parser.parse(&item);
+                                results.push(decl);
+                            }
+                            Err(err) => results.push(Err(err)),
+                        }
+                    }
+                }
+                Err(err) => results.push(Err(InterfaceDeclError::ImportFailure(err))),
+            }
+        }
+        results
+    }
+
+}
+
+struct InterfaceParser<'a> {
+    known_types: &'a KnownTypes<'a>
+}
+
+impl<'a> InterfaceParser<'a> {
+    
+    fn parse(&self, hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
+        let ident = get_ident(hash)?;
+        let params = get_params(&ident)?;
+        let method = get_method(hash)?;
+        let payload = get_payload(&method, &hash)?;
+        let responses = self.get_response(&hash)?;
+        let api_spec = ApiSpec {
+            method,
+            payload,
+            responses,
+        };
+        let spec = InterfaceSpec::Api(api_spec);
+        let decl = InterfaceDecl {
+            ident,
+            params,
+            spec,
+        };
+        Ok(decl)
+    }
+
+    fn get_response(
+        &self,
+        hash: &Hash,
+    ) -> Result<HttpResponses, InterfaceDeclError> {
+        let response_key = key_from("response");
+        if !hash.contains_key(&response_key) {
+            return Ok(None);
+        }
+        match &hash[&response_key] {
+            Yaml::Hash(val) => self.responses_from(val),
+            Yaml::String(name) => {
+                let type_decl = self.known_types.get(name);
+                match type_decl {
+                    Some(type_decl) => {
+                        let type_decl = TypeDecl {
+                            name: name.clone(),
+                            property_decls: type_decl.property_decls.clone(),
+                        };
+                        Ok(Some(HashMap::from([(StatusCode::Fixed(200), type_decl)])))
+                    }
+                    None => Err(InterfaceDeclError::TypeNotFound(name.clone())),
+                }
+            }
+            _ => Err(InterfaceDeclError::InvalidResponseDeclaration),
+        }
+    }
+
+    fn responses_from(
+        &self,
+        hash: &Hash,
+    ) -> Result<HttpResponses, InterfaceDeclError> {
+        let has_custom_codes = has_custom_response_codes(hash);
+        let mut responses = HashMap::new();
+        if has_custom_codes {
+            for (key, value) in hash {
+                let key = match key {
+                    Yaml::String(val) => Ok(val.to_string()),
+                    Yaml::Integer(val) => Ok(val.to_string()),
+                    _ => Err(InterfaceDeclError::InvalidKey),
+                }?;
+                let fixed_code: Result<u16, _> = key.parse();
+                let status_code = match fixed_code {
+                    Ok(code) => StatusCode::Fixed(code),
+                    Err(_) => {
+                        let first = key.chars().next();
+                        let val = first.ok_or(InterfaceDeclError::InvalidStatusCode)?;
+                        let num = val
+                            .to_digit(10)
+                            .ok_or(InterfaceDeclError::InvalidStatusCode)?;
+                        let num: u16 = num
+                            .try_into()
+                            .map_err(|_| InterfaceDeclError::InvalidStatusCode)?;
+                        StatusCode::Prefix(num)
+                    }
+                };
+                let type_decl = self.response_type_decl(value)?;
+                responses.insert(status_code, type_decl);
+            }
+            return Ok(Some(responses));
+        } else {
+            let response = parse_response("200", hash)?;
+            responses.insert(StatusCode::Fixed(200), response);
+        }
+        Ok(Some(responses))
+    }
+
+    fn response_type_decl(&self, hash: &Yaml) -> Result<TypeDecl, InterfaceDeclError> {
+        match hash {
+            Yaml::Hash(val) => {
+                parse_response("200", val)
+            }
+            Yaml::String(name) => {
+                let type_decl = self.known_types.get(name);
+                match type_decl {
+                    Some(type_decl) => {
+                        let type_decl = TypeDecl {
+                            name: name.clone(),
+                            property_decls: type_decl.property_decls.clone(),
+                        };
+                        Ok(type_decl)
+                    }
+                    None => Err(InterfaceDeclError::TypeNotFound(name.clone())),
+                }
+            }
+            _ => Err(InterfaceDeclError::InvalidResponseDeclaration),
+        }
+    }
+
 }
 
 fn from_file(source: &Yaml) -> Result<Vec<Result<Hash, InterfaceDeclError>>, String> {
@@ -88,28 +217,6 @@ fn is_import(item: &Result<Hash, InterfaceDeclError>) -> bool {
         .is_ok_and(|val| !val.contains_key(&Yaml::from_str("_import")))
 }
 
-fn parse_declaration(
-    hash: &Hash,
-    known_types: &KnownTypes,
-) -> Result<InterfaceDecl, InterfaceDeclError> {
-    let ident = get_ident(hash)?;
-    let params = get_params(&ident)?;
-    let method = get_method(hash)?;
-    let payload = get_payload(&method, &hash)?;
-    let responses = get_response(&hash, known_types)?;
-    let api_spec = ApiSpec {
-        method,
-        payload,
-        responses,
-    };
-    let spec = InterfaceSpec::Api(api_spec);
-    let decl = InterfaceDecl {
-        ident,
-        params,
-        spec,
-    };
-    Ok(decl)
-}
 
 fn get_ident(hash: &Hash) -> Result<String, InterfaceDeclError> {
     Ok(hash[&Yaml::from_str("path")]
@@ -228,94 +335,6 @@ fn get_body_if_has(hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclErro
     Ok(Some(payload_value))
 }
 
-fn get_response(
-    hash: &Hash,
-    known_types: &KnownTypes,
-) -> Result<HttpResponses, InterfaceDeclError> {
-    let response_key = key_from("response");
-    if !hash.contains_key(&response_key) {
-        return Ok(None);
-    }
-    match &hash[&response_key] {
-        Yaml::Hash(val) => responses_from(val, known_types),
-        Yaml::String(name) => {
-            let type_decl = known_types.get(name);
-            match type_decl {
-                Some(type_decl) => {
-                    let type_decl = TypeDecl {
-                        name: name.clone(),
-                        property_decls: type_decl.property_decls.clone(),
-                    };
-                    Ok(Some(HashMap::from([(StatusCode::Fixed(200), type_decl)])))
-                }
-                None => Err(InterfaceDeclError::TypeNotFound(name.clone())),
-            }
-        }
-        _ => Err(InterfaceDeclError::InvalidResponseDeclaration),
-    }
-}
-
-fn responses_from(
-    hash: &Hash,
-    known_types: &KnownTypes,
-) -> Result<HttpResponses, InterfaceDeclError> {
-    let has_custom_codes = has_custom_response_codes(hash);
-    let mut responses = HashMap::new();
-    if has_custom_codes {
-        for (key, value) in hash {
-            let key = match key {
-                Yaml::String(val) => Ok(val.to_string()),
-                Yaml::Integer(val) => Ok(val.to_string()),
-                _ => Err(InterfaceDeclError::InvalidKey),
-            }?;
-            let fixed_code: Result<u16, _> = key.parse();
-            let status_code = match fixed_code {
-                Ok(code) => StatusCode::Fixed(code),
-                Err(_) => {
-                    let first = key.chars().next();
-                    let val = first.ok_or(InterfaceDeclError::InvalidStatusCode)?;
-                    let num = val
-                        .to_digit(10)
-                        .ok_or(InterfaceDeclError::InvalidStatusCode)?;
-                    let num: u16 = num
-                        .try_into()
-                        .map_err(|_| InterfaceDeclError::InvalidStatusCode)?;
-                    StatusCode::Prefix(num)
-                }
-            };
-            let type_decl = response_type_decl(value, known_types)?;
-            responses.insert(status_code, type_decl);
-        }
-        return Ok(Some(responses));
-    } else {
-        let response = parse_response("200", hash)?;
-        responses.insert(StatusCode::Fixed(200), response);
-    }
-    Ok(Some(responses))
-}
-
-fn response_type_decl(hash: &Yaml, known_types: &KnownTypes) -> Result<TypeDecl, InterfaceDeclError> {
-    match hash {
-        Yaml::Hash(val) => {
-            parse_response("200", val)
-        }
-        Yaml::String(name) => {
-            let type_decl = known_types.get(name);
-            match type_decl {
-                Some(type_decl) => {
-                    let type_decl = TypeDecl {
-                        name: name.clone(),
-                        property_decls: type_decl.property_decls.clone(),
-                    };
-                    Ok(type_decl)
-                }
-                None => Err(InterfaceDeclError::TypeNotFound(name.clone())),
-            }
-        }
-        _ => Err(InterfaceDeclError::InvalidResponseDeclaration),
-    }
-}
-
 fn has_custom_response_codes(hash: &Hash) -> bool {
     hash.keys()
         .find(|key| {
@@ -341,15 +360,16 @@ mod tests {
     use yaml_rust::yaml::Hash;
     use yaml_rust::Yaml;
 
-    use crate::schema::{ApiSpec, HttpMethod, InterfaceDecl, InterfaceSpec, PropertyDecl};
+    use crate::{schema::{ApiSpec, HttpMethod, InterfaceDecl, InterfaceSpec, PropertyDecl}, parser::interfaces::InterfaceParser};
 
     #[test]
     fn minimal_get() {
         let mut hash = Hash::new();
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("get"));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Ok(InterfaceDecl {
@@ -374,8 +394,9 @@ mod tests {
         query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Ok(InterfaceDecl {
@@ -418,8 +439,9 @@ mod tests {
         let mut body = Hash::new();
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Err(crate::schema::InterfaceDeclError::BodyNotAllowed),
@@ -432,8 +454,9 @@ mod tests {
         let mut hash = Hash::new();
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news/post"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("post"));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Ok(InterfaceDecl {
@@ -457,8 +480,9 @@ mod tests {
         let mut body = Hash::new();
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Ok(InterfaceDecl {
@@ -491,8 +515,9 @@ mod tests {
         query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Err(crate::schema::InterfaceDeclError::QueryNotAllowed),
@@ -505,8 +530,9 @@ mod tests {
         let mut hash = Hash::new();
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news/post"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("put"));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Ok(InterfaceDecl {
@@ -530,8 +556,9 @@ mod tests {
             Yaml::from_str("news/post/{post_id}"),
         );
         hash.insert(Yaml::from_str("method"), Yaml::from_str("delete"));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Ok(InterfaceDecl {
@@ -559,8 +586,9 @@ mod tests {
         query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Err(crate::schema::InterfaceDeclError::QueryNotAllowed),
@@ -579,8 +607,9 @@ mod tests {
         let mut body = Hash::new();
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
+        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
 
-        let result = super::parse_declaration(&hash);
+        let result = parser.parse(&hash);
 
         assert_eq!(
             Err(crate::schema::InterfaceDeclError::BodyNotAllowed),

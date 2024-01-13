@@ -11,7 +11,7 @@ use crate::parser::types::TypesParser;
 use crate::parser::{utils::read_yaml, versioning::VersioningParser};
 use crate::schema::Schema;
 
-use self::interfaces::parse as parse_interfaces;
+use self::interfaces::InterfacesParser;
 
 pub fn parse(file_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
     let yaml = read_yaml(file_path)?;
@@ -30,8 +30,8 @@ pub fn parse(file_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
 
     let interfaces_imports = detect(&main["interfaces"], "example")?;
     let interfaces_main = &interfaces_imports[0].as_ref().unwrap();
-    let interfaces = parse_interfaces(&interfaces_main, "example", &types);
-
+    let interfaces_parser = InterfacesParser::new(&interfaces_main, "example", &types);
+    let interfaces = interfaces_parser.parse();
     let schema = Schema { hosts, versioning, types, interfaces };
 
     Ok(schema)
