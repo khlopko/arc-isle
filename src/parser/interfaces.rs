@@ -15,12 +15,15 @@ type KnownTypes<'a> = HashMap<&'a String, &'a TypeDecl>;
 pub struct InterfacesParser<'a> {
     main: &'a Yaml,
     parent_path: &'a str,
-    known_types: KnownTypes<'a>
+    known_types: KnownTypes<'a>,
 }
 
 impl<'a> InterfacesParser<'a> {
-
-    pub fn new(main: &'a Yaml, parent_path: &'a str, type_decls: &'a TypeDeclResults) -> InterfacesParser<'a> {
+    pub fn new(
+        main: &'a Yaml,
+        parent_path: &'a str,
+        type_decls: &'a TypeDeclResults,
+    ) -> InterfacesParser<'a> {
         let pairs = type_decls.iter().filter_map(|item| {
             if let Ok(item) = item {
                 return Some((&item.name, item));
@@ -29,7 +32,9 @@ impl<'a> InterfacesParser<'a> {
         });
         let known_types = HashMap::from_iter(pairs);
         InterfacesParser {
-            main, parent_path, known_types
+            main,
+            parent_path,
+            known_types,
         }
     }
 
@@ -40,7 +45,9 @@ impl<'a> InterfacesParser<'a> {
             sources.extend(imports);
         }
         let mut results = Vec::new();
-        let interface_parser = InterfaceParser { known_types: &self.known_types };
+        let interface_parser = InterfaceParser {
+            known_types: &self.known_types,
+        };
         for source in sources {
             match source {
                 Ok(source) => {
@@ -63,15 +70,13 @@ impl<'a> InterfacesParser<'a> {
         }
         results
     }
-
 }
 
 struct InterfaceParser<'a> {
-    known_types: &'a KnownTypes<'a>
+    known_types: &'a KnownTypes<'a>,
 }
 
 impl<'a> InterfaceParser<'a> {
-    
     fn parse(&self, hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
         let ident = get_ident(hash)?;
         let params = get_params(&ident)?;
@@ -92,10 +97,7 @@ impl<'a> InterfaceParser<'a> {
         Ok(decl)
     }
 
-    fn get_response(
-        &self,
-        hash: &Hash,
-    ) -> Result<HttpResponses, InterfaceDeclError> {
+    fn get_response(&self, hash: &Hash) -> Result<HttpResponses, InterfaceDeclError> {
         let response_key = key_from("response");
         if !hash.contains_key(&response_key) {
             return Ok(None);
@@ -119,50 +121,60 @@ impl<'a> InterfaceParser<'a> {
         }
     }
 
-    fn responses_from(
-        &self,
-        hash: &Hash,
-    ) -> Result<HttpResponses, InterfaceDeclError> {
-        let has_custom_codes = has_custom_response_codes(hash);
+    fn responses_from(&self, hash: &Hash) -> Result<HttpResponses, InterfaceDeclError> {
+        if self.has_custom_response_codes(hash) {
+            return self.custom_responses(hash);
+        }
+        let status_code = StatusCode::Fixed(200);
+        let key = &status_code.as_key();
+        let single_response = HashMap::from([(status_code, self.parse_response(key, hash)?)]);
+        Ok(Some(single_response))
+    }
+
+    fn has_custom_response_codes(&self, hash: &Hash) -> bool {
+        hash.keys()
+            .find(|key| {
+                key.as_str().map_or(false, |key| {
+                    key.chars().next().map_or(false, |x| x.is_digit(10))
+                })
+            })
+            .is_some()
+    }
+
+    fn custom_responses(&self, hash: &Hash) -> Result<HttpResponses, InterfaceDeclError> {
         let mut responses = HashMap::new();
-        if has_custom_codes {
-            for (key, value) in hash {
-                let key = match key {
-                    Yaml::String(val) => Ok(val.to_string()),
-                    Yaml::Integer(val) => Ok(val.to_string()),
-                    _ => Err(InterfaceDeclError::InvalidKey),
-                }?;
-                let fixed_code: Result<u16, _> = key.parse();
-                let status_code = match fixed_code {
-                    Ok(code) => StatusCode::Fixed(code),
-                    Err(_) => {
-                        let first = key.chars().next();
-                        let val = first.ok_or(InterfaceDeclError::InvalidStatusCode)?;
-                        let num = val
-                            .to_digit(10)
-                            .ok_or(InterfaceDeclError::InvalidStatusCode)?;
-                        let num: u16 = num
-                            .try_into()
-                            .map_err(|_| InterfaceDeclError::InvalidStatusCode)?;
-                        StatusCode::Prefix(num)
-                    }
-                };
-                let type_decl = self.response_type_decl(value)?;
-                responses.insert(status_code, type_decl);
-            }
-            return Ok(Some(responses));
-        } else {
-            let response = parse_response("200", hash)?;
-            responses.insert(StatusCode::Fixed(200), response);
+        for (key, value) in hash {
+            let key = match key {
+                Yaml::String(val) => Ok(val.to_string()),
+                Yaml::Integer(val) => Ok(val.to_string()),
+                _ => Err(InterfaceDeclError::InvalidKey),
+            }?;
+            let fixed_code: Result<u16, _> = key.parse();
+            let status_code = match fixed_code {
+                Ok(code) => StatusCode::Fixed(code),
+                Err(_) => self.as_status_code_pattern(&key)?,
+            };
+            let type_decl = self.response_type_decl(value)?;
+            responses.insert(status_code, type_decl);
         }
         Ok(Some(responses))
     }
 
+    fn as_status_code_pattern(&self, key: &str) -> Result<StatusCode, InterfaceDeclError> {
+        let first = key.chars().next();
+        let val = first.ok_or(InterfaceDeclError::InvalidStatusCode)?;
+        let num = val
+            .to_digit(10)
+            .ok_or(InterfaceDeclError::InvalidStatusCode)?;
+        let num: u16 = num
+            .try_into()
+            .map_err(|_| InterfaceDeclError::InvalidStatusCode)?;
+        Ok(StatusCode::Prefix(num))
+    }
+
     fn response_type_decl(&self, hash: &Yaml) -> Result<TypeDecl, InterfaceDeclError> {
         match hash {
-            Yaml::Hash(val) => {
-                parse_response("200", val)
-            }
+            Yaml::Hash(val) => self.parse_response("200", val),
             Yaml::String(name) => {
                 let type_decl = self.known_types.get(name);
                 match type_decl {
@@ -180,6 +192,11 @@ impl<'a> InterfaceParser<'a> {
         }
     }
 
+    fn parse_response(&self, key: &str, hash: &Hash) -> Result<TypeDecl, InterfaceDeclError> {
+        TypeParser { key, value: hash }
+            .parse()
+            .map_err(|_| InterfaceDeclError::InvalidResponseTypeDeclaration)
+    }
 }
 
 fn from_file(source: &Yaml) -> Result<Vec<Result<Hash, InterfaceDeclError>>, String> {
@@ -216,7 +233,6 @@ fn is_import(item: &Result<Hash, InterfaceDeclError>) -> bool {
     item.as_ref()
         .is_ok_and(|val| !val.contains_key(&Yaml::from_str("_import")))
 }
-
 
 fn get_ident(hash: &Hash) -> Result<String, InterfaceDeclError> {
     Ok(hash[&Yaml::from_str("path")]
@@ -335,22 +351,6 @@ fn get_body_if_has(hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclErro
     Ok(Some(payload_value))
 }
 
-fn has_custom_response_codes(hash: &Hash) -> bool {
-    hash.keys()
-        .find(|key| {
-            key.as_str().map_or(false, |key| {
-                key.chars().next().map_or(false, |x| x.is_digit(10))
-            })
-        })
-        .is_some()
-}
-
-fn parse_response(key: &str, hash: &Hash) -> Result<TypeDecl, InterfaceDeclError> {
-    TypeParser { key, value: hash }
-        .parse()
-        .map_err(|_| InterfaceDeclError::InvalidResponseTypeDeclaration)
-}
-
 fn key_from(value: &str) -> Yaml {
     Yaml::from_str(value)
 }
@@ -360,14 +360,19 @@ mod tests {
     use yaml_rust::yaml::Hash;
     use yaml_rust::Yaml;
 
-    use crate::{schema::{ApiSpec, HttpMethod, InterfaceDecl, InterfaceSpec, PropertyDecl}, parser::interfaces::InterfaceParser};
+    use crate::{
+        parser::interfaces::InterfaceParser,
+        schema::{ApiSpec, HttpMethod, InterfaceDecl, InterfaceSpec, PropertyDecl},
+    };
 
     #[test]
     fn minimal_get() {
         let mut hash = Hash::new();
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("get"));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -394,7 +399,9 @@ mod tests {
         query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -439,7 +446,9 @@ mod tests {
         let mut body = Hash::new();
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -454,7 +463,9 @@ mod tests {
         let mut hash = Hash::new();
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news/post"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("post"));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -480,7 +491,9 @@ mod tests {
         let mut body = Hash::new();
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -515,7 +528,9 @@ mod tests {
         query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -530,7 +545,9 @@ mod tests {
         let mut hash = Hash::new();
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news/post"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("put"));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -556,7 +573,9 @@ mod tests {
             Yaml::from_str("news/post/{post_id}"),
         );
         hash.insert(Yaml::from_str("method"), Yaml::from_str("delete"));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -586,7 +605,9 @@ mod tests {
         query.insert(Yaml::from_str("page"), Yaml::from_str("int"));
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
@@ -607,7 +628,9 @@ mod tests {
         let mut body = Hash::new();
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
-        let parser = InterfaceParser { known_types: &std::collections::HashMap::new() };
+        let parser = InterfaceParser {
+            known_types: &std::collections::HashMap::new(),
+        };
 
         let result = parser.parse(&hash);
 
