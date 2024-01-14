@@ -282,6 +282,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
+            known_types: &HashSet::new()
         };
 
         let data_type_decl = parser

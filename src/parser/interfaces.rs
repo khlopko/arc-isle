@@ -368,6 +368,8 @@ fn key_from(value: &str) -> Yaml {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use yaml_rust::yaml::Hash;
     use yaml_rust::Yaml;
 
@@ -382,6 +384,7 @@ mod tests {
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("get"));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -411,6 +414,7 @@ mod tests {
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -458,6 +462,7 @@ mod tests {
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -475,6 +480,7 @@ mod tests {
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news/post"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("post"));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -503,6 +509,7 @@ mod tests {
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -540,6 +547,7 @@ mod tests {
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -557,6 +565,7 @@ mod tests {
         hash.insert(Yaml::from_str("path"), Yaml::from_str("news/post"));
         hash.insert(Yaml::from_str("method"), Yaml::from_str("put"));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -585,6 +594,7 @@ mod tests {
         );
         hash.insert(Yaml::from_str("method"), Yaml::from_str("delete"));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -617,6 +627,7 @@ mod tests {
         query.insert(Yaml::from_str("limit"), Yaml::from_str("int?"));
         hash.insert(Yaml::from_str("query"), Yaml::Hash(query));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
@@ -640,6 +651,7 @@ mod tests {
         body.insert(Yaml::from_str("title"), Yaml::from_str("str"));
         hash.insert(Yaml::from_str("body"), Yaml::Hash(body));
         let parser = InterfaceParser {
+            knows_types_set: &HashSet::new(),
             known_types: &std::collections::HashMap::new(),
         };
 
