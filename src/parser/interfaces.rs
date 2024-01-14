@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
@@ -15,6 +15,7 @@ type KnownTypes<'a> = HashMap<&'a String, &'a TypeDecl>;
 pub struct InterfacesParser<'a> {
     main: &'a Yaml,
     parent_path: &'a str,
+    known_types_set: &'a HashSet<String>,
     known_types: KnownTypes<'a>,
 }
 
@@ -22,6 +23,7 @@ impl<'a> InterfacesParser<'a> {
     pub fn new(
         main: &'a Yaml,
         parent_path: &'a str,
+        known_types: &'a HashSet<String>,
         type_decls: &'a TypeDeclResults,
     ) -> InterfacesParser<'a> {
         let pairs = type_decls.iter().filter_map(|item| {
@@ -30,11 +32,11 @@ impl<'a> InterfacesParser<'a> {
             }
             None
         });
-        let known_types = HashMap::from_iter(pairs);
         InterfacesParser {
             main,
             parent_path,
-            known_types,
+            known_types_set: known_types,
+            known_types: HashMap::from_iter(pairs),
         }
     }
 
@@ -46,6 +48,7 @@ impl<'a> InterfacesParser<'a> {
         }
         let mut results = Vec::new();
         let interface_parser = InterfaceParser {
+            knows_types_set: &self.known_types_set,
             known_types: &self.known_types,
         };
         for source in sources {
@@ -73,6 +76,7 @@ impl<'a> InterfacesParser<'a> {
 }
 
 struct InterfaceParser<'a> {
+    knows_types_set: &'a HashSet<String>,
     known_types: &'a KnownTypes<'a>,
 }
 
@@ -81,7 +85,7 @@ impl<'a> InterfaceParser<'a> {
         let ident = get_ident(hash)?;
         let params = get_params(&ident)?;
         let method = get_method(hash)?;
-        let payload = get_payload(&method, &hash)?;
+        let payload = self.get_payload(&method, &hash)?;
         let responses = self.get_response(&hash)?;
         let api_spec = ApiSpec {
             method,
@@ -193,9 +197,83 @@ impl<'a> InterfaceParser<'a> {
     }
 
     fn parse_response(&self, key: &str, hash: &Hash) -> Result<TypeDecl, InterfaceDeclError> {
-        TypeParser { key, value: hash }
+        TypeParser {
+            key,
+            value: hash,
+            known_types: &self.knows_types_set,
+        }
+        .parse()
+        .map_err(|_| InterfaceDeclError::InvalidResponseTypeDeclaration)
+    }
+
+    fn get_payload(
+        &self,
+        method: &HttpMethod,
+        hash: &Hash,
+    ) -> Result<Option<HttpPayload>, InterfaceDeclError> {
+        match method {
+            HttpMethod::Get | HttpMethod::Head => {
+                if hash.contains_key(&key_from("body")) {
+                    return Err(InterfaceDeclError::BodyNotAllowed);
+                }
+                return self.get_query_if_has(hash);
+            }
+            HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch => {
+                if hash.contains_key(&key_from("query")) {
+                    return Err(InterfaceDeclError::QueryNotAllowed);
+                }
+                return self.get_body_if_has(hash);
+            }
+            HttpMethod::Delete => {
+                if hash.contains_key(&key_from("query")) {
+                    return Err(InterfaceDeclError::QueryNotAllowed);
+                }
+                if hash.contains_key(&key_from("body")) {
+                    return Err(InterfaceDeclError::BodyNotAllowed);
+                }
+                return Ok(None);
+            }
+        }
+    }
+
+    fn get_query_if_has(&self, hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
+        let query_key = key_from("query");
+        if !hash.contains_key(&query_key) {
+            return Ok(None);
+        }
+        let raw_query = hash[&query_key]
+            .as_hash()
+            .ok_or(InterfaceDeclError::InvalidQuery)?;
+        let parser = TypeParser {
+            key: &query_key.as_str().unwrap(),
+            value: raw_query,
+            known_types: &self.knows_types_set,
+        };
+        let query = parser
             .parse()
-            .map_err(|_| InterfaceDeclError::InvalidResponseTypeDeclaration)
+            .map_err(|_| InterfaceDeclError::InvalidQuery)?;
+        let payload_value = HttpPayload::Query(query.property_decls);
+        Ok(Some(payload_value))
+    }
+
+    fn get_body_if_has(&self, hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
+        let body_key = key_from("body");
+        if !hash.contains_key(&body_key) {
+            return Ok(None);
+        }
+        let raw_body = hash[&body_key]
+            .as_hash()
+            .ok_or(InterfaceDeclError::InvalidBody)?;
+        let parser = TypeParser {
+            key: &body_key.as_str().unwrap(),
+            value: raw_body,
+            known_types: &self.knows_types_set,
+        };
+        let body = parser
+            .parse()
+            .map_err(|_| InterfaceDeclError::InvalidBody)?;
+        let payload_value = HttpPayload::Body(body.property_decls);
+        Ok(Some(payload_value))
     }
 }
 
@@ -282,73 +360,6 @@ fn get_method(hash: &Hash) -> Result<HttpMethod, InterfaceDeclError> {
         "connect" => Ok(HttpMethod::Connect),*/
         _ => Err(InterfaceDeclError::InvalidMethod),
     }
-}
-
-fn get_payload(
-    method: &HttpMethod,
-    hash: &Hash,
-) -> Result<Option<HttpPayload>, InterfaceDeclError> {
-    match method {
-        HttpMethod::Get | HttpMethod::Head => {
-            if hash.contains_key(&key_from("body")) {
-                return Err(InterfaceDeclError::BodyNotAllowed);
-            }
-            return get_query_if_has(hash);
-        }
-        HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch => {
-            if hash.contains_key(&key_from("query")) {
-                return Err(InterfaceDeclError::QueryNotAllowed);
-            }
-            return get_body_if_has(hash);
-        }
-        HttpMethod::Delete => {
-            if hash.contains_key(&key_from("query")) {
-                return Err(InterfaceDeclError::QueryNotAllowed);
-            }
-            if hash.contains_key(&key_from("body")) {
-                return Err(InterfaceDeclError::BodyNotAllowed);
-            }
-            return Ok(None);
-        }
-    }
-}
-
-fn get_query_if_has(hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
-    let query_key = key_from("query");
-    if !hash.contains_key(&query_key) {
-        return Ok(None);
-    }
-    let raw_query = hash[&query_key]
-        .as_hash()
-        .ok_or(InterfaceDeclError::InvalidQuery)?;
-    let parser = TypeParser {
-        key: &query_key.as_str().unwrap(),
-        value: raw_query,
-    };
-    let query = parser
-        .parse()
-        .map_err(|_| InterfaceDeclError::InvalidQuery)?;
-    let payload_value = HttpPayload::Query(query.property_decls);
-    Ok(Some(payload_value))
-}
-
-fn get_body_if_has(hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
-    let body_key = key_from("body");
-    if !hash.contains_key(&body_key) {
-        return Ok(None);
-    }
-    let raw_body = hash[&body_key]
-        .as_hash()
-        .ok_or(InterfaceDeclError::InvalidBody)?;
-    let parser = TypeParser {
-        key: &body_key.as_str().unwrap(),
-        value: raw_body,
-    };
-    let body = parser
-        .parse()
-        .map_err(|_| InterfaceDeclError::InvalidBody)?;
-    let payload_value = HttpPayload::Body(body.property_decls);
-    Ok(Some(payload_value))
 }
 
 fn key_from(value: &str) -> Yaml {

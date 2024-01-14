@@ -3,6 +3,7 @@ use crate::parser::utils::as_str_or;
 use crate::schema::{
     DataType, DataTypeDecl, Primitive, PropertyDecl, TypeDecl, TypeDeclError, TypeDeclResults,
 };
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use yaml_rust::yaml::Hash;
@@ -11,10 +12,11 @@ use yaml_rust::Yaml;
 pub struct TypesParser<'a> {
     pub main: &'a Yaml,
     pub parent_path: &'a str,
+    pub known_types: &'a mut HashSet<String>
 }
 
 impl<'a> TypesParser<'a> {
-    pub fn parse(&self) -> Result<TypeDeclResults, TypeDeclError> {
+    pub fn parse(&mut self) -> Result<TypeDeclResults, TypeDeclError> {
         let mut results = Vec::new();
         let mut sources = Vec::new();
         sources.push(Ok(self.main.clone()));
@@ -31,7 +33,7 @@ impl<'a> TypesParser<'a> {
     }
 
     fn parse_composed_source(
-        &self,
+        &mut self,
         source: &Yaml,
         output: &mut TypeDeclResults,
     ) -> Result<(), TypeDeclError> {
@@ -39,13 +41,15 @@ impl<'a> TypesParser<'a> {
             .as_hash()
             .ok_or(TypeDeclError::UnsupportedTypeDeclaration)?;
         for (key, value) in source {
-            let key = &as_str_or(key, TypeDeclError::UnsupportedKeyType)?;
+            let key = as_str_or(key, TypeDeclError::UnsupportedKeyType)?;
             if key == "_import" {
                 continue;
             }
+            self.known_types.insert(key.clone());
             let object_parser = TypeParser {
-                key,
+                key: &key,
                 value: &value.as_hash().unwrap(),
+                known_types: &self.known_types
             };
             let result = object_parser.parse();
             output.push(result);
@@ -57,10 +61,7 @@ impl<'a> TypesParser<'a> {
 pub struct TypeParser<'a> {
     pub key: &'a str,
     pub value: &'a Hash,
-}
-
-fn type_of<T>(_: T) -> &'static str {
-    std::any::type_name::<T>()
+    pub known_types: &'a HashSet<String>
 }
 
 impl<'a> TypeParser<'a> {
@@ -143,6 +144,7 @@ impl<'a> TypeParser<'a> {
         let parser = TypeParser {
             key: property_name,
             value: hash_value,
+            known_types: self.known_types
         };
         let object_decl = parser
             .parse()
@@ -265,6 +267,8 @@ impl Display for TypeDeclError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use crate::{
         parser::types::TypeParser,
         schema::{DataType, DataTypeDecl, Primitive, PropertyDecl, TypeDecl},
@@ -298,6 +302,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
+            known_types: &HashSet::new()
         };
 
         let data_type_decl = parser
@@ -318,6 +323,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
+            known_types: &HashSet::new()
         };
 
         let data_type_decl = parser
@@ -338,6 +344,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
+            known_types: &HashSet::new()
         };
 
         let data_type_decl = parser
@@ -358,6 +365,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
+            known_types: &HashSet::new()
         };
 
         let data_type_decl = parser
@@ -381,6 +389,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
+            known_types: &HashSet::new()
         };
 
         let data_type_decl = parser
@@ -406,6 +415,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
+            known_types: &HashSet::new()
         };
 
         let data_type_decl = parser
@@ -439,6 +449,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &value.as_hash().unwrap(),
+            known_types: &HashSet::new()
         };
 
         let data_type_decl = parser

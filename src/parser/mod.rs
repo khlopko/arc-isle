@@ -5,6 +5,8 @@ mod imports;
 mod types;
 mod interfaces;
 
+use std::collections::HashSet;
+
 use crate::parser::hosts::HostsParser;
 use crate::parser::imports::detect;
 use crate::parser::types::TypesParser;
@@ -23,14 +25,15 @@ pub fn parse(file_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
     let versioning_parser = VersioningParser { main };
     let versioning = versioning_parser.parse()?;
 
+    let mut known_types: HashSet<String> = HashSet::new();
     let types_imports = detect(&main["types"], "example")?;
     let types_main = &types_imports[0].as_ref().unwrap();
-    let types_parser = TypesParser { main: &types_main, parent_path: "example" };
+    let mut types_parser = TypesParser { main: &types_main, parent_path: "example", known_types: &mut known_types };
     let types = types_parser.parse()?;
 
     let interfaces_imports = detect(&main["interfaces"], "example")?;
     let interfaces_main = &interfaces_imports[0].as_ref().unwrap();
-    let interfaces_parser = InterfacesParser::new(&interfaces_main, "example", &types);
+    let interfaces_parser = InterfacesParser::new(&interfaces_main, "example", &known_types, &types);
     let interfaces = interfaces_parser.parse();
     let schema = Schema { hosts, versioning, types, interfaces };
 
