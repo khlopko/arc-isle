@@ -12,14 +12,14 @@ use yaml_rust::Yaml;
 pub struct TypesParser<'a> {
     pub main: &'a Yaml,
     pub parent_path: &'a str,
-    pub known_types: &'a mut HashSet<String>
+    pub known_types: &'a mut HashSet<String>,
 }
 
 impl<'a> TypesParser<'a> {
     pub fn parse(&mut self) -> Result<TypeDeclResults, TypeDeclError> {
         let mut results = Vec::new();
         let mut sources = Vec::new();
-        sources.push(Ok(self.main.clone()));
+        sources.push(Ok(self.main.to_owned()));
         if let Ok(imports) = detect(&self.main, self.parent_path) {
             sources.extend(imports);
         }
@@ -49,7 +49,7 @@ impl<'a> TypesParser<'a> {
             let object_parser = TypeParser {
                 key: &key,
                 value: &value.as_hash().unwrap(),
-                known_types: &self.known_types
+                known_types: &self.known_types,
             };
             let result = object_parser.parse();
             output.push(result);
@@ -61,7 +61,7 @@ impl<'a> TypesParser<'a> {
 pub struct TypeParser<'a> {
     pub key: &'a str,
     pub value: &'a Hash,
-    pub known_types: &'a HashSet<String>
+    pub known_types: &'a HashSet<String>,
 }
 
 impl<'a> TypeParser<'a> {
@@ -144,7 +144,7 @@ impl<'a> TypeParser<'a> {
         let parser = TypeParser {
             key: property_name,
             value: hash_value,
-            known_types: self.known_types
+            known_types: self.known_types,
         };
         let object_decl = parser
             .parse()
@@ -282,7 +282,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new()
+            known_types: &HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -303,7 +303,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new()
+            known_types: &HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -324,7 +324,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new()
+            known_types: &HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -345,7 +345,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new()
+            known_types: &HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -366,7 +366,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new()
+            known_types: &HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -390,7 +390,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new()
+            known_types: &HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -416,7 +416,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new()
+            known_types: &HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -450,7 +450,7 @@ mod tests {
         let parser = TypeParser {
             key: &key,
             value: &value.as_hash().unwrap(),
-            known_types: &HashSet::new()
+            known_types: &HashSet::new(),
         };
 
         let data_type_decl = parser

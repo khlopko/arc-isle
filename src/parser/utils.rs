@@ -1,4 +1,4 @@
-use std::{fs, io, ops::Deref};
+use std::{fs, io};
 use yaml_rust::{Yaml, YamlEmitter, YamlLoader};
 
 pub type YamlHash = yaml_rust::yaml::Hash;
@@ -12,7 +12,7 @@ impl std::error::Error for ReadError {
 }
 
 impl std::fmt::Display for ReadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         todo!()
     }
 }

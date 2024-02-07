@@ -42,7 +42,7 @@ impl<'a> InterfacesParser<'a> {
 
     pub fn parse(&self) -> InterfaceDeclResults {
         let mut sources = Vec::new();
-        sources.push(Ok(self.main.clone()));
+        sources.push(Ok(self.main.to_owned()));
         if let Ok(imports) = detect(&self.main, self.parent_path) {
             sources.extend(imports);
         }

@@ -54,14 +54,14 @@ pub struct TypeDecl {
 
 impl Debug for TypeDecl {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut result = "TypeDecl {\n".to_string();
-        result.push_str(&format!("    name = {}\n", self.name));
+        let mut result = format!("type {} {{\n", self.name);
         for property_decl in &self.property_decls {
             result.push_str(&format!(
-                "    {} = {:?}\n",
+                "    {}: {:?}\n",
                 property_decl.name, property_decl.data_type_decl
             ));
         }
+        result.push_str("}\n");
         f.write_str(&result)
     }
 }
@@ -82,19 +82,41 @@ pub enum TypeDeclError {
     UnsupportedPrimitive(String),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct DataTypeDecl {
     pub data_type: DataType,
     pub is_required: bool,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+impl Debug for DataTypeDecl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut result = format!("{:?}", self.data_type);
+        if !self.is_required {
+            result.push_str("?");
+        }
+        f.write_str(&result)
+    }
+}
+
+#[derive(PartialEq, Clone)]
 pub enum DataType {
     Primitive(Primitive),
     Array(Box<DataType>),
     Dict(Primitive, Box<DataType>),
     Object(String),
     ObjectDecl(TypeDecl),
+}
+
+impl Debug for DataType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataType::Primitive(primitive) => f.write_str(&format!("{:?}", primitive)),
+            DataType::Array(data_type) => f.write_str(&format!("array[{:?}]", data_type)),
+            DataType::Dict(key, value) => f.write_str(&format!("dict{{ {:?}: {:?} }}", key, value)),
+            DataType::Object(ident) => f.write_str(&format!("{}", ident)),
+            DataType::ObjectDecl(type_decl) => f.write_str(&format!("{:?}", type_decl)),
+        } 
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -127,23 +149,53 @@ impl PartialEq for ImportError {
 
 pub type InterfaceDeclResults = Vec<Result<InterfaceDecl, InterfaceDeclError>>;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct InterfaceDecl {
     pub ident: String,
     pub params: Vec<String>,
     pub spec: InterfaceSpec,
 }
 
-#[derive(Debug, PartialEq)]
+impl Debug for InterfaceDecl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut result = format!("{} {{\n", self.ident);
+        result.push_str(&format!("\t{:?}\n", self.spec));
+        result.push_str("}\n");
+        f.write_str(&result)
+    }
+}
+
+#[derive(PartialEq)]
 pub enum InterfaceSpec {
     Api(ApiSpec),
 }
 
-#[derive(Debug, PartialEq)]
+impl Debug for InterfaceSpec {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InterfaceSpec::Api(api_spec) => f.write_str(&format!("{:?}", api_spec)),
+        }
+    }
+}
+
+#[derive(PartialEq)]
 pub struct ApiSpec {
     pub method: HttpMethod,
     pub payload: Option<HttpPayload>,
     pub responses: HttpResponses,
+}
+
+impl Debug for ApiSpec {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut result = format!("method: {:?}\n", self.method);
+        if let Some(payload) = &self.payload {
+            result.push_str(&format!("\t{:?}\n", payload));
+        }
+        if let Some(responses) = &self.responses {
+            result.push_str(&format!("\t{:?}", responses));
+        }
+        f.write_str(&result)
+    }
 }
 
 pub type HttpResponses = Option<HashMap<StatusCode, TypeDecl>>;

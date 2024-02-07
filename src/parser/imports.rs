@@ -26,8 +26,7 @@ pub fn detect(
             let file_path = parent_path.to_string() + "/" + &file_path;
             match read_yaml(&file_path) {
                 Ok(imported_yaml) => {
-                    let imported_source = (&imported_yaml[0]).clone();
-                    found_imports.push(Ok(imported_source))
+                    found_imports.push(Ok(imported_yaml[0].to_owned()))
                 }
                 Err(err) => found_imports.push(Err(ImportError::IOError(err))),
             }
@@ -39,8 +38,7 @@ pub fn detect(
                         let file_path = parent_path.to_string() + "/" + &file_path;
                         match read_yaml(&file_path) {
                             Ok(imported_yaml) => {
-                                let imported_source = (&imported_yaml[0]).clone();
-                                found_imports.push(Ok(imported_source))
+                                found_imports.push(Ok(imported_yaml[0].to_owned()))
                             }
                             Err(err) => found_imports.push(Err(ImportError::IOError(err))),
                         }
