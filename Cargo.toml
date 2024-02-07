@@ -3,6 +3,7 @@ name = "arc-isle"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
+description = "The Interface Specification Language for the Arc project: design and implementation"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
