@@ -1,32 +1,35 @@
 use crate::parser::imports::detect;
 use crate::parser::utils::as_str_or;
 use crate::schema::{
-    DataType, DataTypeDecl, Primitive, PropertyDecl, TypeDecl, TypeDeclError, TypeDeclResults,
+    DataType, DataTypeDecl, ImportError, Primitive, PropertyDecl, TypeDecl, TypeDeclError, TypeDeclResults
 };
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
 
+use crate::parser::utils::YamlHash;
+
 pub struct TypesParser<'a> {
-    pub main: &'a Yaml,
     pub parent_path: &'a str,
     pub known_types: &'a mut HashSet<String>,
 }
 
 impl<'a> TypesParser<'a> {
-    pub fn parse(&mut self) -> Result<TypeDeclResults, TypeDeclError> {
+    pub fn parse(&mut self, main: Yaml) -> Result<TypeDeclResults, TypeDeclError> {
         let mut results = Vec::new();
         let mut sources = Vec::new();
-        sources.push(Ok(self.main.to_owned()));
-        if let Ok(imports) = detect(&self.main, self.parent_path) {
-            sources.extend(imports);
+        let inner: Option<&YamlHash> = main.as_hash();
+        let inner = inner.ok_or(TypeDeclError::ImportFailure(ImportError::InvalidInputSource))?;
+        let imports = detect(inner, self.parent_path);
+        for i in imports {
+            sources.push(i);
         }
+        sources.insert(0, Ok(main));
         for source in sources {
             match source {
                 Ok(source) => self.parse_composed_source(&source, &mut results)?,
-                Err(err) => results.push(Err(TypeDeclError::ImportFailure(err))),
+                Err(err) => results.push(Err(TypeDeclError::ImportFailure(err.clone()))),
             }
         }
         Ok(results)
@@ -60,7 +63,7 @@ impl<'a> TypesParser<'a> {
 
 pub struct TypeParser<'a> {
     pub key: &'a str,
-    pub value: &'a Hash,
+    pub value: &'a YamlHash,
     pub known_types: &'a HashSet<String>,
 }
 
@@ -136,7 +139,7 @@ impl<'a> TypeParser<'a> {
     fn hash_data_type_decl(
         &self,
         property_name: &str,
-        hash_value: &Hash,
+        hash_value: &YamlHash,
     ) -> Result<DataTypeDecl, TypeDeclError> {
         if hash_value.is_empty() {
             return Err(TypeDeclError::EmptyTypeDeclaration);
@@ -153,7 +156,7 @@ impl<'a> TypeParser<'a> {
                 is_required: true,
             })
             .map_err(|_| TypeDeclError::UnsupportedTypeDeclaration);
-        return object_decl;
+        object_decl
     }
 
     fn make_data_type(

@@ -10,35 +10,37 @@ pub struct SourceImport {
 }
 
 pub fn detect(
-    source: &Yaml,
+    source: &YamlHash,
     parent_path: &str,
-) -> Result<Vec<Result<Yaml, ImportError>>, ImportError> {
-    let mut found_imports = Vec::new();
-    let inner: Option<&YamlHash> = source.as_hash();
-    let inner = inner.ok_or(ImportError::InvalidInputSource)?;
-    let import_key = &Yaml::String("_import".to_string());
-    let is_import = inner.contains_key(import_key);
+) -> Vec<Result<Yaml, ImportError>> {
+    let import_key = Yaml::String("_import".to_string());
+    let is_import = source.contains_key(&import_key);
     if !is_import {
-        return Ok(found_imports);
+        return Vec::new();
     }
-    match &inner[import_key] {
+    let mut found_imports = Vec::new();
+    match &source[&import_key] {
         Yaml::String(file_path) => {
             let file_path = parent_path.to_string() + "/" + &file_path;
             match read_yaml(&file_path) {
                 Ok(imported_yaml) => {
-                    found_imports.push(Ok(imported_yaml[0].to_owned()))
+                    for e in imported_yaml {
+                        found_imports.push(Ok(e));
+                    }
                 }
                 Err(err) => found_imports.push(Err(ImportError::IOError(err))),
             }
         }
         Yaml::Array(file_paths) => {
             for file_path in file_paths {
-                match as_str_or(file_path, ImportError::InvalidImportValue) {
+                match as_str_or(&file_path, ImportError::InvalidImportValue) {
                     Ok(file_path) => {
                         let file_path = parent_path.to_string() + "/" + &file_path;
                         match read_yaml(&file_path) {
                             Ok(imported_yaml) => {
-                                found_imports.push(Ok(imported_yaml[0].to_owned()))
+                                for e in imported_yaml {
+                                    found_imports.push(Ok(e));
+                                }
                             }
                             Err(err) => found_imports.push(Err(ImportError::IOError(err))),
                         }
@@ -49,7 +51,7 @@ pub fn detect(
         }
         _ => found_imports.push(Err(ImportError::InvalidImportValue)),
     }
-    Ok(found_imports)
+    found_imports
 }
 
 impl ImportError {
