@@ -1,19 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
 
 use crate::schema::{
-    ApiSpec, HttpMethod, HttpPayload, HttpResponses, InterfaceDecl, InterfaceDeclError,
-    InterfaceDeclResults, InterfaceSpec, StatusCode, TypeDecl, TypeDeclResults,
+    ApiSpec, HttpMethod, HttpPayload, HttpResponses, ImportError, InterfaceDecl,
+    InterfaceDeclError, InterfaceDeclResults, InterfaceSpec, StatusCode, TypeDecl, TypeDeclResults,
 };
 
-use super::{imports::detect, types::TypeParser};
+use super::{imports::detect, types::TypeParser, utils::YamlHash};
 
 type KnownTypes<'a> = HashMap<&'a String, &'a TypeDecl>;
 
 pub struct InterfacesParser<'a> {
-    main: &'a Yaml,
     parent_path: &'a str,
     known_types_set: &'a HashSet<String>,
     known_types: KnownTypes<'a>,
@@ -21,7 +19,6 @@ pub struct InterfacesParser<'a> {
 
 impl<'a> InterfacesParser<'a> {
     pub fn new(
-        main: &'a Yaml,
         parent_path: &'a str,
         known_types: &'a HashSet<String>,
         type_decls: &'a TypeDeclResults,
@@ -33,19 +30,23 @@ impl<'a> InterfacesParser<'a> {
             None
         });
         InterfacesParser {
-            main,
             parent_path,
             known_types_set: known_types,
             known_types: HashMap::from_iter(pairs),
         }
     }
 
-    pub fn parse(&self) -> InterfaceDeclResults {
+    pub fn parse(&self, main: Yaml) -> Result<InterfaceDeclResults, InterfaceDeclError> {
         let mut sources = Vec::new();
-        sources.push(Ok(self.main.to_owned()));
-        if let Ok(imports) = detect(&self.main, self.parent_path) {
-            sources.extend(imports);
+        let inner: Option<&YamlHash> = main.as_hash();
+        let inner = inner.ok_or(InterfaceDeclError::ImportFailure(
+            ImportError::InvalidInputSource,
+        ))?;
+        let imports = detect(inner, self.parent_path);
+        for i in imports {
+            sources.push(i);
         }
+        sources.insert(0, Ok(main));
         let mut results = Vec::new();
         let interface_parser = InterfaceParser {
             knows_types_set: &self.known_types_set,
@@ -68,10 +69,10 @@ impl<'a> InterfacesParser<'a> {
                         }
                     }
                 }
-                Err(err) => results.push(Err(InterfaceDeclError::ImportFailure(err))),
+                Err(err) => results.push(Err(InterfaceDeclError::ImportFailure(err.clone()))),
             }
         }
-        results
+        Ok(results)
     }
 }
 
@@ -81,7 +82,7 @@ struct InterfaceParser<'a> {
 }
 
 impl<'a> InterfaceParser<'a> {
-    fn parse(&self, hash: &Hash) -> Result<InterfaceDecl, InterfaceDeclError> {
+    fn parse(&self, hash: &YamlHash) -> Result<InterfaceDecl, InterfaceDeclError> {
         let ident = get_ident(hash)?;
         let params = get_params(&ident)?;
         let method = get_method(hash)?;
@@ -101,7 +102,7 @@ impl<'a> InterfaceParser<'a> {
         Ok(decl)
     }
 
-    fn get_response(&self, hash: &Hash) -> Result<HttpResponses, InterfaceDeclError> {
+    fn get_response(&self, hash: &YamlHash) -> Result<HttpResponses, InterfaceDeclError> {
         let response_key = key_from("response");
         if !hash.contains_key(&response_key) {
             return Ok(None);
@@ -125,7 +126,7 @@ impl<'a> InterfaceParser<'a> {
         }
     }
 
-    fn responses_from(&self, hash: &Hash) -> Result<HttpResponses, InterfaceDeclError> {
+    fn responses_from(&self, hash: &YamlHash) -> Result<HttpResponses, InterfaceDeclError> {
         if self.has_custom_response_codes(hash) {
             return self.custom_responses(hash);
         }
@@ -135,7 +136,7 @@ impl<'a> InterfaceParser<'a> {
         Ok(Some(single_response))
     }
 
-    fn has_custom_response_codes(&self, hash: &Hash) -> bool {
+    fn has_custom_response_codes(&self, hash: &YamlHash) -> bool {
         hash.keys()
             .find(|key| {
                 key.as_str().map_or(false, |key| {
@@ -145,7 +146,7 @@ impl<'a> InterfaceParser<'a> {
             .is_some()
     }
 
-    fn custom_responses(&self, hash: &Hash) -> Result<HttpResponses, InterfaceDeclError> {
+    fn custom_responses(&self, hash: &YamlHash) -> Result<HttpResponses, InterfaceDeclError> {
         let mut responses = HashMap::new();
         for (key, value) in hash {
             let key = match key {
@@ -196,7 +197,7 @@ impl<'a> InterfaceParser<'a> {
         }
     }
 
-    fn parse_response(&self, key: &str, hash: &Hash) -> Result<TypeDecl, InterfaceDeclError> {
+    fn parse_response(&self, key: &str, hash: &YamlHash) -> Result<TypeDecl, InterfaceDeclError> {
         TypeParser {
             key,
             value: hash,
@@ -209,20 +210,20 @@ impl<'a> InterfaceParser<'a> {
     fn get_payload(
         &self,
         method: &HttpMethod,
-        hash: &Hash,
+        hash: &YamlHash,
     ) -> Result<Option<HttpPayload>, InterfaceDeclError> {
         match method {
             HttpMethod::Get | HttpMethod::Head => {
                 if hash.contains_key(&key_from("body")) {
                     return Err(InterfaceDeclError::BodyNotAllowed);
                 }
-                return self.get_query_if_has(hash);
+                self.get_query_if_has(hash)
             }
             HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch => {
                 if hash.contains_key(&key_from("query")) {
                     return Err(InterfaceDeclError::QueryNotAllowed);
                 }
-                return self.get_body_if_has(hash);
+                self.get_body_if_has(hash)
             }
             HttpMethod::Delete => {
                 if hash.contains_key(&key_from("query")) {
@@ -231,12 +232,12 @@ impl<'a> InterfaceParser<'a> {
                 if hash.contains_key(&key_from("body")) {
                     return Err(InterfaceDeclError::BodyNotAllowed);
                 }
-                return Ok(None);
+                Ok(None)
             }
         }
     }
 
-    fn get_query_if_has(&self, hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
+    fn get_query_if_has(&self, hash: &YamlHash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
         let query_key = key_from("query");
         if !hash.contains_key(&query_key) {
             return Ok(None);
@@ -256,7 +257,7 @@ impl<'a> InterfaceParser<'a> {
         Ok(Some(payload_value))
     }
 
-    fn get_body_if_has(&self, hash: &Hash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
+    fn get_body_if_has(&self, hash: &YamlHash) -> Result<Option<HttpPayload>, InterfaceDeclError> {
         let body_key = key_from("body");
         if !hash.contains_key(&body_key) {
             return Ok(None);
@@ -277,7 +278,7 @@ impl<'a> InterfaceParser<'a> {
     }
 }
 
-fn from_file(source: &Yaml) -> Result<Vec<Result<Hash, InterfaceDeclError>>, String> {
+fn from_file(source: &Yaml) -> Result<Vec<Result<YamlHash, InterfaceDeclError>>, String> {
     if let Some(source) = source.as_vec() {
         return Ok(source.iter().map(|item| read_decl(item)).collect());
     }
@@ -287,7 +288,7 @@ fn from_file(source: &Yaml) -> Result<Vec<Result<Hash, InterfaceDeclError>>, Str
     Err("invalid source".to_string())
 }
 
-fn from_hash(source: &Hash) -> Vec<Result<Hash, InterfaceDeclError>> {
+fn from_hash(source: &YamlHash) -> Vec<Result<YamlHash, InterfaceDeclError>> {
     let key = Yaml::from_str("declarations");
     source[&key]
         .as_vec()
@@ -298,13 +299,13 @@ fn from_hash(source: &Hash) -> Vec<Result<Hash, InterfaceDeclError>> {
         .collect()
 }
 
-fn read_decl(item: &Yaml) -> Result<Hash, InterfaceDeclError> {
+fn read_decl(item: &Yaml) -> Result<YamlHash, InterfaceDeclError> {
     item.as_hash()
         .ok_or(InterfaceDeclError::InvalidInterfaceDeclaration)
         .cloned()
 }
 
-fn is_import(item: &Result<Hash, InterfaceDeclError>) -> bool {
+fn is_import(item: &Result<YamlHash, InterfaceDeclError>) -> bool {
     if item.is_err() {
         return false;
     }
@@ -312,7 +313,7 @@ fn is_import(item: &Result<Hash, InterfaceDeclError>) -> bool {
         .is_ok_and(|val| !val.contains_key(&Yaml::from_str("_import")))
 }
 
-fn get_ident(hash: &Hash) -> Result<String, InterfaceDeclError> {
+fn get_ident(hash: &YamlHash) -> Result<String, InterfaceDeclError> {
     Ok(hash[&Yaml::from_str("path")]
         .as_str()
         .ok_or(InterfaceDeclError::InvalidIdent)?
@@ -344,7 +345,7 @@ fn get_params(ident: &str) -> Result<Vec<String>, InterfaceDeclError> {
     Ok(params)
 }
 
-fn get_method(hash: &Hash) -> Result<HttpMethod, InterfaceDeclError> {
+fn get_method(hash: &YamlHash) -> Result<HttpMethod, InterfaceDeclError> {
     let raw_method = hash[&Yaml::from_str("method")]
         .as_str()
         .ok_or(InterfaceDeclError::InvalidMethod)?;
