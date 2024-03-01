@@ -3,6 +3,24 @@
 
 Its goal is to provide a lightweight way to describe virtually any type of interfaces in the software and provide more advanced tools for the analysis and governance.
 
+# Status 
+
+The project is in early development stage. At the moment, it is capable of parsing a document created according
+to the specification described below, and emit errors in places that does not match without 
+failing all the parsing.
+
+Nearest plans is to:
+
+[ ] Add types declarations validation. Right now we collect declared types, but does not verify that all usages
+stict to that declarations and emit errors.
+[ ] Check speed on larger documents. So far it has been tested on a really small API specification, large and
+more real-world example is required to define if there optimizations to be done.
+[ ] Command-line interface. Should it be part of the parser?
+[ ] OpenAPI <> ArcISLE convertation.
+[ ] Mix types and routes declaration
+[ ] Different route versions
+[ ] Default response code guess
+
 # Structure
 
 All specification is written using YAML solely. It allows to write less, do this faster, and still have powerful tools to cover wide range of needs. JSON has inconvenient limitations, like requiring quotes almost everywhere, which make it harder to write manually.
@@ -194,12 +212,4 @@ An advanced scenario is when we want to define custom responses for different ca
 You can specify either concrete status code, like `200` or `501` in example above, or pattern for a family of status codes, like `4xx` and `5xx`, and you can combine both styles.
 
 By default `2xx` family is assumed if response field does not specify any code.
-
-# Future
-
-These items are yet neither implemented nor designed:
-
-[] Different route versions
-[] Default response code guess
-[] Mix types and routes declaration
 
