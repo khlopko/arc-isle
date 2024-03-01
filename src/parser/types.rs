@@ -4,8 +4,6 @@ use crate::schema::{
     DataType, DataTypeDecl, ImportError, Primitive, PropertyDecl, TypeDecl, TypeDeclError, TypeDeclResults
 };
 use std::collections::HashSet;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use yaml_rust::Yaml;
 
 use crate::parser::utils::YamlHash;

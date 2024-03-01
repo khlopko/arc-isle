@@ -215,7 +215,7 @@ impl PartialEq for ImportError {
 
 pub type InterfaceDeclResults = Vec<Result<InterfaceDecl, InterfaceDeclError>>;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct InterfaceDecl {
     pub ident: String,
     pub params: Vec<String>,
