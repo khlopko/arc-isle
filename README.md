@@ -11,15 +11,15 @@ failing all the parsing.
 
 Nearest plans is to:
 
-[ ] Add types declarations validation. Right now we collect declared types, but does not verify that all usages
+- [ ] Add types declarations validation. Right now we collect declared types, but does not verify that all usages
 stict to that declarations and emit errors.
-[ ] Check speed on larger documents. So far it has been tested on a really small API specification, large and
+- [ ] Check speed on larger documents. So far it has been tested on a really small API specification, large and
 more real-world example is required to define if there optimizations to be done.
-[ ] Command-line interface. Should it be part of the parser?
-[ ] OpenAPI <> ArcISLE convertation.
-[ ] Mix types and routes declaration
-[ ] Different route versions
-[ ] Default response code guess
+- [ ] Command-line interface. Should it be part of the parser?
+- [ ] OpenAPI <> ArcISLE convertation.
+- [ ] Mix types and routes declaration
+- [ ] Different route versions
+- [ ] Default response code guess
 
 # Structure
 
