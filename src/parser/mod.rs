@@ -40,11 +40,12 @@ pub fn parse(parent_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
         .as_hash()
         .ok_or(ImportError::InvalidInputSource)?;
     let interfaces_imports = detect(&main_interfaces_hash, parent_path);
-    let interfaces_parser = InterfacesParser::new(parent_path, &known_types, &types);
+    let mut interfaces_parser = InterfacesParser::new(parent_path, &mut known_types, &types);
     let mut interfaces: Vec<_> = vec![];
     for import in interfaces_imports {
         interfaces.extend(interfaces_parser.parse(import?)?);
     }
+    println!("{:?}", known_types);
     let schema = Schema {
         hosts,
         versioning,

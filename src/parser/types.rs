@@ -49,10 +49,10 @@ impl<'a> TypesParser<'a> {
                 continue;
             }
             self.known_types.insert(key.clone());
-            let object_parser = TypeParser {
+            let mut object_parser = TypeParser {
                 key: &key,
                 value: &value.as_hash().unwrap(),
-                known_types: &self.known_types,
+                known_types: &mut self.known_types,
             };
             let result = object_parser.parse();
             output.push(result);
@@ -64,11 +64,11 @@ impl<'a> TypesParser<'a> {
 pub struct TypeParser<'a> {
     pub key: &'a str,
     pub value: &'a YamlHash,
-    pub known_types: &'a HashSet<String>,
+    pub known_types: &'a mut HashSet<String>,
 }
 
 impl<'a> TypeParser<'a> {
-    pub fn parse(&self) -> Result<TypeDecl, TypeDeclError> {
+    pub fn parse(&mut self) -> Result<TypeDecl, TypeDeclError> {
         let mut property_decls = Vec::new();
         for (property_name, property_type) in self.value.iter() {
             let property_name = as_str_or(property_name, TypeDeclError::UnsupportedKeyType)?;
@@ -79,6 +79,7 @@ impl<'a> TypeParser<'a> {
             };
             property_decls.push(property_decl);
         }
+        self.known_types.insert(self.key.to_string());
         Ok(TypeDecl {
             name: self.key.to_string(),
             property_decls,
@@ -86,7 +87,7 @@ impl<'a> TypeParser<'a> {
     }
 
     fn make_data_type_decl(
-        &self,
+        &mut self,
         raw_type: &Yaml,
         property_name: &str,
     ) -> Result<DataTypeDecl, TypeDeclError> {
@@ -137,14 +138,14 @@ impl<'a> TypeParser<'a> {
     }
 
     fn hash_data_type_decl(
-        &self,
+        &mut self,
         property_name: &str,
         hash_value: &YamlHash,
     ) -> Result<DataTypeDecl, TypeDeclError> {
         if hash_value.is_empty() {
             return Err(TypeDeclError::EmptyTypeDeclaration);
         }
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: property_name,
             value: hash_value,
             known_types: self.known_types,
@@ -239,34 +240,6 @@ impl<'a> TypeParser<'a> {
     }
 }
 
-impl TypeDeclError {
-    fn default_fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        match self {
-            TypeDeclError::ImportFailure(import_error) => {
-                write!(f, "Import failed: {}", import_error.to_string())
-            }
-            TypeDeclError::UnsupportedTypeDeclaration => {
-                write!(f, "This type declaration format is not supported.")
-            }
-            TypeDeclError::UnsupportedKeyType => write!(f, "Key type must be string."),
-            TypeDeclError::EmptyTypeDeclaration => write!(f, "Type declaration cannot be empty."),
-            TypeDeclError::SubtypeValuesEmptyDeclaration => {
-                write!(f, "Subtype declaration cannot be empty.")
-            }
-            TypeDeclError::UnsupportedPrimitive(value) => {
-                write!(f, "Primitive {} not supported.", value)
-            }
-        }
-    }
-}
-
-impl Error for TypeDeclError {}
-
-impl Display for TypeDeclError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.default_fmt(f)
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -282,10 +255,10 @@ mod tests {
     fn make_data_type_decl_for_str() {
         let key = "key".to_string();
         let value = Yaml::String("str".to_string());
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new(),
+            known_types: &mut HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -303,10 +276,10 @@ mod tests {
     fn make_data_type_decl_for_optional_str() {
         let key = "key".to_string();
         let value = Yaml::String("str?".to_string());
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new(),
+            known_types: &mut HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -324,10 +297,10 @@ mod tests {
     fn make_data_type_decl_for_array() {
         let key = "key".to_string();
         let value = Yaml::String("array[int]".to_string());
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new(),
+            known_types: &mut HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -345,10 +318,10 @@ mod tests {
     fn make_data_type_decl_for_optional_array() {
         let key = "key".to_string();
         let value = Yaml::String("array[int]?".to_string());
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new(),
+            known_types: &mut HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -366,10 +339,10 @@ mod tests {
     fn make_data_type_decl_for_dict_with_primitives() {
         let key = "key".to_string();
         let value = Yaml::String("dict[int, str]?".to_string());
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new(),
+            known_types: &mut HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -390,10 +363,10 @@ mod tests {
     fn make_data_type_decl_for_dict_with_another_data_type() {
         let key = "key".to_string();
         let value = Yaml::String("dict[int, array[user]]?".to_string());
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new(),
+            known_types: &mut HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -416,10 +389,10 @@ mod tests {
     fn make_data_type_decl_for_optional_object() {
         let key = "created_at".to_string();
         let value = Yaml::String("date?".to_string());
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &HashSet::new(),
+            known_types: &mut HashSet::new(),
         };
 
         let data_type_decl = parser
@@ -450,10 +423,10 @@ mod tests {
             Yaml::String("bool".to_string()),
         );
         let value = Yaml::Hash(hash);
-        let parser = TypeParser {
+        let mut parser = TypeParser {
             key: &key,
             value: &value.as_hash().unwrap(),
-            known_types: &HashSet::new(),
+            known_types: &mut HashSet::new(),
         };
 
         let data_type_decl = parser
