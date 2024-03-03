@@ -1,16 +1,16 @@
 use crate::parser::imports::detect;
 use crate::parser::utils::as_str_or;
 use crate::schema::{
-    DataType, DataTypeDecl, ImportError, Primitive, PropertyDecl, TypeDecl, TypeDeclError, TypeDeclResults
+    DataType, DataTypeDecl, ImportError, Primitive, PropertyDecl, StatusCode, TypeDecl, TypeDeclError, TypeDeclResults, TypeUsageMeta, UnknownType
 };
-use std::collections::HashSet;
+use std::collections::HashMap;
 use yaml_rust::Yaml;
 
 use crate::parser::utils::YamlHash;
 
 pub struct TypesParser<'a> {
     pub parent_path: &'a str,
-    pub known_types: &'a mut HashSet<String>,
+    pub types_usage: &'a mut HashMap<String, TypeUsageMeta>,
 }
 
 impl<'a> TypesParser<'a> {
@@ -18,7 +18,9 @@ impl<'a> TypesParser<'a> {
         let mut results = Vec::new();
         let mut sources = Vec::new();
         let inner: Option<&YamlHash> = main.as_hash();
-        let inner = inner.ok_or(TypeDeclError::ImportFailure(ImportError::InvalidInputSource))?;
+        let inner = inner.ok_or(TypeDeclError::ImportFailure(
+            ImportError::InvalidInputSource,
+        ))?;
         let imports = detect(inner, self.parent_path);
         for i in imports {
             sources.push(i);
@@ -41,16 +43,17 @@ impl<'a> TypesParser<'a> {
         let source = source
             .as_hash()
             .ok_or(TypeDeclError::UnsupportedTypeDeclaration)?;
-        for (key, value) in source {
+        for (i, e) in source.iter().enumerate() {
+            let (key, value) = e;
             let key = as_str_or(key, TypeDeclError::UnsupportedKeyType)?;
             if key == "_import" {
                 continue;
             }
-            self.known_types.insert(key.clone());
             let mut object_parser = TypeParser {
                 key: &key,
                 value: &value.as_hash().unwrap(),
-                known_types: &mut self.known_types,
+                types_usage: &mut self.types_usage,
+                source: TypeDeclSource::Type(i),
             };
             let result = object_parser.parse();
             output.push(result);
@@ -59,10 +62,18 @@ impl<'a> TypesParser<'a> {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum TypeDeclSource<'a> {
+    Type(usize),
+    InterfaceInput(usize),
+    InterfaceOutput(&'a StatusCode),
+}
+
 pub struct TypeParser<'a> {
     pub key: &'a str,
     pub value: &'a YamlHash,
-    pub known_types: &'a mut HashSet<String>,
+    pub types_usage: &'a mut HashMap<String, TypeUsageMeta>,
+    pub source: TypeDeclSource<'a>, 
 }
 
 impl<'a> TypeParser<'a> {
@@ -77,7 +88,7 @@ impl<'a> TypeParser<'a> {
             };
             property_decls.push(property_decl);
         }
-        self.known_types.insert(self.key.to_string());
+        self.types_usage.insert(self.key.to_string(), None);
         Ok(TypeDecl {
             name: self.key.to_string(),
             property_decls,
@@ -96,7 +107,7 @@ impl<'a> TypeParser<'a> {
         }
     }
 
-    fn string_data_type_decl(&self, string_value: &str) -> Result<DataTypeDecl, TypeDeclError> {
+    fn string_data_type_decl(&mut self, string_value: &str) -> Result<DataTypeDecl, TypeDeclError> {
         if string_value.is_empty() {
             return Err(TypeDeclError::EmptyTypeDeclaration);
         }
@@ -146,7 +157,8 @@ impl<'a> TypeParser<'a> {
         let mut parser = TypeParser {
             key: property_name,
             value: hash_value,
-            known_types: self.known_types,
+            types_usage: self.types_usage,
+            source: self.source.clone(),
         };
         let object_decl = parser
             .parse()
@@ -159,7 +171,7 @@ impl<'a> TypeParser<'a> {
     }
 
     fn make_data_type(
-        &self,
+        &mut self,
         type_name: &str,
         subtypes: &Vec<String>,
     ) -> Result<DataType, TypeDeclError> {
@@ -173,11 +185,19 @@ impl<'a> TypeParser<'a> {
                 Ok(DataType::Array(Box::new(contained_type)))
             }
             "dict" => self.make_dict_data_type(subtypes),
-            other => Ok(DataType::Object(other.to_string())),
+            other => {
+                if !self.types_usage.contains_key(other) {
+                    self.types_usage.insert(
+                        other.to_string(),
+                        Some(UnknownType::InTypeDeclaration(0, 0)),
+                    );
+                }
+                Ok(DataType::Object(other.to_string()))
+            }
         }
     }
 
-    fn make_dict_data_type(&self, subtypes: &Vec<String>) -> Result<DataType, TypeDeclError> {
+    fn make_dict_data_type(&mut self, subtypes: &Vec<String>) -> Result<DataType, TypeDeclError> {
         let key = self.make_primitive(&subtypes[0])?;
         let mut value_type_name: &str = &subtypes[1];
         let value_subtypes: Vec<String>;
@@ -238,13 +258,12 @@ impl<'a> TypeParser<'a> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::HashMap;
 
     use crate::{
-        parser::types::TypeParser,
+        parser::types::{TypeDeclSource, TypeParser},
         schema::{DataType, DataTypeDecl, Primitive, PropertyDecl, TypeDecl},
     };
     use yaml_rust::Yaml;
@@ -256,7 +275,8 @@ mod tests {
         let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &mut HashSet::new(),
+            types_usage: &mut HashMap::new(),
+            source: TypeDeclSource::Type(0)
         };
 
         let data_type_decl = parser
@@ -277,7 +297,8 @@ mod tests {
         let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &mut HashSet::new(),
+            types_usage: &mut HashMap::new(),
+            source: TypeDeclSource::Type(0)
         };
 
         let data_type_decl = parser
@@ -298,7 +319,8 @@ mod tests {
         let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &mut HashSet::new(),
+            types_usage: &mut HashMap::new(),
+            source: TypeDeclSource::Type(0)
         };
 
         let data_type_decl = parser
@@ -319,7 +341,8 @@ mod tests {
         let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &mut HashSet::new(),
+            types_usage: &mut HashMap::new(),
+            source: TypeDeclSource::Type(0)
         };
 
         let data_type_decl = parser
@@ -340,7 +363,8 @@ mod tests {
         let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &mut HashSet::new(),
+            types_usage: &mut HashMap::new(),
+            source: TypeDeclSource::Type(0)
         };
 
         let data_type_decl = parser
@@ -364,7 +388,8 @@ mod tests {
         let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &mut HashSet::new(),
+            types_usage: &mut HashMap::new(),
+            source: TypeDeclSource::Type(0)
         };
 
         let data_type_decl = parser
@@ -390,7 +415,8 @@ mod tests {
         let mut parser = TypeParser {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
-            known_types: &mut HashSet::new(),
+            types_usage: &mut HashMap::new(),
+            source: TypeDeclSource::Type(0)
         };
 
         let data_type_decl = parser
@@ -424,7 +450,8 @@ mod tests {
         let mut parser = TypeParser {
             key: &key,
             value: &value.as_hash().unwrap(),
-            known_types: &mut HashSet::new(),
+            types_usage: &mut HashMap::new(),
+            source: TypeDeclSource::Type(0)
         };
 
         let data_type_decl = parser

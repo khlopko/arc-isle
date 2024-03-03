@@ -369,7 +369,6 @@ impl Display for HttpPayload {
 #[derive(Debug, PartialEq)]
 pub enum InterfaceDeclError {
     ImportFailure(ImportError),
-    UnsupportedInterfaceDeclaration,
     BodyNotAllowed,
     QueryNotAllowed,
     InvalidKey,
@@ -382,7 +381,6 @@ pub enum InterfaceDeclError {
     InvalidMethod,
     InvalidQuery,
     InvalidBody,
-    InvalidResponseValue,
     InvalidResponseTypeDeclaration,
 }
 
@@ -395,3 +393,13 @@ impl Display for InterfaceDeclError {
         }
     }
 }
+
+pub type TypeUsageMeta = Option<UnknownType>;
+
+#[derive(Debug, PartialEq)]
+pub enum UnknownType {
+    InTypeDeclaration(usize, usize),
+    InPayload(usize),
+    InResponse(StatusCode, usize)
+}
+
