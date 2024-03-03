@@ -1,7 +1,8 @@
 use crate::parser::imports::detect;
 use crate::parser::utils::as_str_or;
 use crate::schema::{
-    DataType, DataTypeDecl, ImportError, Primitive, PropertyDecl, StatusCode, TypeDecl, TypeDeclError, TypeDeclResults, TypeUsageMeta, UnknownType
+    DataType, DataTypeDecl, ImportError, Primitive, PropertyDecl, StatusCode, TypeDecl,
+    TypeDeclError, TypeDeclResults, TypeUsageMeta, UnknownType,
 };
 use std::collections::HashMap;
 use yaml_rust::Yaml;
@@ -63,17 +64,17 @@ impl<'a> TypesParser<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum TypeDeclSource<'a> {
+pub enum TypeDeclSource {
     Type(usize),
     InterfaceInput(usize),
-    InterfaceOutput(&'a StatusCode),
+    InterfaceOutput(usize, StatusCode),
 }
 
 pub struct TypeParser<'a> {
     pub key: &'a str,
     pub value: &'a YamlHash,
     pub types_usage: &'a mut HashMap<String, TypeUsageMeta>,
-    pub source: TypeDeclSource<'a>, 
+    pub source: TypeDeclSource,
 }
 
 impl<'a> TypeParser<'a> {
@@ -114,7 +115,11 @@ impl<'a> TypeParser<'a> {
         let chars: Vec<char> = string_value.chars().collect();
         let mut last_read_index = 0;
         let mut type_name = String::new();
-        while last_read_index < chars.len() && chars[last_read_index].is_alphabetic() {
+        while last_read_index < chars.len()
+            && (chars[last_read_index].is_alphabetic()
+                || chars[last_read_index] == '_'
+                || last_read_index > 0 && chars[last_read_index].is_numeric())
+        {
             type_name.push(chars[last_read_index]);
             last_read_index += 1;
         }
@@ -185,14 +190,33 @@ impl<'a> TypeParser<'a> {
                 Ok(DataType::Array(Box::new(contained_type)))
             }
             "dict" => self.make_dict_data_type(subtypes),
+            "date_iso8601" => Ok(DataType::Primitive(Primitive::Str)),
+            "url" => Ok(DataType::Primitive(Primitive::Str)),
+            "timestamp" => Ok(DataType::Primitive(Primitive::Int)),
+            "uuid" => Ok(DataType::Primitive(Primitive::Str)),
             other => {
-                if !self.types_usage.contains_key(other) {
-                    self.types_usage.insert(
-                        other.to_string(),
-                        Some(UnknownType::InTypeDeclaration(0, 0)),
-                    );
-                }
+                self.handle_if_unknown_type(other);
                 Ok(DataType::Object(other.to_string()))
+            }
+        }
+    }
+
+    fn handle_if_unknown_type(&mut self, type_name: &str) {
+        let meta = self.types_usage.get_mut(type_name);
+        let make_unknown = || match &self.source {
+            TypeDeclSource::Type(i) => UnknownType::InTypeDeclaration(*i, 0),
+            TypeDeclSource::InterfaceInput(i) => UnknownType::InPayload(*i, 0),
+            TypeDeclSource::InterfaceOutput(i, code) => UnknownType::InResponse(*i, code.clone(), 0),
+        };
+        match meta {
+            Some(val) => match val {
+                Some(val) => {
+                    val.push(make_unknown());
+                }
+                None => {}
+            },
+            None => {
+                self.types_usage.insert(type_name.to_string(), Some(vec![make_unknown()]));
             }
         }
     }
@@ -276,7 +300,7 @@ mod tests {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
             types_usage: &mut HashMap::new(),
-            source: TypeDeclSource::Type(0)
+            source: TypeDeclSource::Type(0),
         };
 
         let data_type_decl = parser
@@ -298,7 +322,7 @@ mod tests {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
             types_usage: &mut HashMap::new(),
-            source: TypeDeclSource::Type(0)
+            source: TypeDeclSource::Type(0),
         };
 
         let data_type_decl = parser
@@ -320,7 +344,7 @@ mod tests {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
             types_usage: &mut HashMap::new(),
-            source: TypeDeclSource::Type(0)
+            source: TypeDeclSource::Type(0),
         };
 
         let data_type_decl = parser
@@ -342,7 +366,7 @@ mod tests {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
             types_usage: &mut HashMap::new(),
-            source: TypeDeclSource::Type(0)
+            source: TypeDeclSource::Type(0),
         };
 
         let data_type_decl = parser
@@ -364,7 +388,7 @@ mod tests {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
             types_usage: &mut HashMap::new(),
-            source: TypeDeclSource::Type(0)
+            source: TypeDeclSource::Type(0),
         };
 
         let data_type_decl = parser
@@ -389,7 +413,7 @@ mod tests {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
             types_usage: &mut HashMap::new(),
-            source: TypeDeclSource::Type(0)
+            source: TypeDeclSource::Type(0),
         };
 
         let data_type_decl = parser
@@ -416,7 +440,7 @@ mod tests {
             key: &key,
             value: &yaml_rust::yaml::Hash::new(),
             types_usage: &mut HashMap::new(),
-            source: TypeDeclSource::Type(0)
+            source: TypeDeclSource::Type(0),
         };
 
         let data_type_decl = parser
@@ -451,7 +475,7 @@ mod tests {
             key: &key,
             value: &value.as_hash().unwrap(),
             types_usage: &mut HashMap::new(),
-            source: TypeDeclSource::Type(0)
+            source: TypeDeclSource::Type(0),
         };
 
         let data_type_decl = parser

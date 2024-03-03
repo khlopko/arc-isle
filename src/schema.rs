@@ -284,7 +284,7 @@ impl Display for ApiSpec {
 
 pub type HttpResponses = Option<HashMap<StatusCode, TypeDecl>>;
 
-#[derive(Eq, Hash, PartialEq, Debug)]
+#[derive(Eq, Hash, PartialEq, Clone, Debug)]
 pub enum StatusCode {
     Fixed(u16),
     Prefix(u16),
@@ -394,12 +394,12 @@ impl Display for InterfaceDeclError {
     }
 }
 
-pub type TypeUsageMeta = Option<UnknownType>;
+pub type TypeUsageMeta = Option<Vec<UnknownType>>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UnknownType {
     InTypeDeclaration(usize, usize),
-    InPayload(usize),
-    InResponse(StatusCode, usize)
+    InPayload(usize, usize),
+    InResponse(usize, StatusCode, usize)
 }
 

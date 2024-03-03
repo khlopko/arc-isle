@@ -6,6 +6,8 @@ pub(crate) mod utils;
 mod versioning;
 
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::Display;
 
 use crate::parser::hosts::HostsParser;
 use crate::parser::imports::detect;
@@ -14,6 +16,20 @@ use crate::parser::{utils::read_yaml, versioning::VersioningParser};
 use crate::schema::{ImportError, Schema, TypeUsageMeta, UnknownType};
 
 use self::interfaces::InterfacesParser;
+
+#[derive(Debug)]
+pub struct MissingTypeDeclError {
+    pub list: Vec<UnknownType>
+}
+
+impl Error for MissingTypeDeclError {
+}
+
+impl Display for MissingTypeDeclError {
+   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+       f.write_str(&format!("{:?}", self.list))
+   } 
+}
 
 pub fn parse(parent_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
     let file_path = &(parent_path.to_string() + "/main.yaml");
@@ -43,23 +59,37 @@ pub fn parse(parent_path: &str) -> Result<Schema, Box<dyn std::error::Error>> {
     let mut interfaces_parser = InterfacesParser {
         parent_path,
         types_usage: &mut types_usage,
-        types: &types
+        types: &types,
     };
     let mut interfaces: Vec<_> = vec![];
     for import in interfaces_imports {
         interfaces.extend(interfaces_parser.parse(import?)?);
     }
-    for (_, unknown) in &types_usage {
+    let mut missing_declations: Vec<UnknownType> = Vec::new();
+    for (type_name, unknown) in &types_usage {
         if let Some(unknown) = unknown {
-            match unknown {
-                UnknownType::InTypeDeclaration(ti, pi) => {
-                },
-                UnknownType::InPayload(ii) => {
-                },
-                UnknownType::InResponse(code, pi) => {
-                },
+            for e in unknown {
+                missing_declations.push(e.clone());
+                match e {
+                    UnknownType::InTypeDeclaration(ti, pi) => {
+                        println!("Unknown type {} at {} in property at {}", type_name, ti, pi);
+                    }
+                    UnknownType::InPayload(ii, pi) => {
+                        println!("Unknown type {} in interface (#{}) input {}", type_name, ii, pi);
+                    }
+                    UnknownType::InResponse(ii, code, pi) => {
+                        println!(
+                        "Unknown type {} in interface (#{}) output status code {} in property at {}",
+                        type_name, ii, code, pi
+                    );
+                    }
+                }
             }
         }
+    }
+    if !missing_declations.is_empty() {
+        let err = MissingTypeDeclError{list: missing_declations};
+        return Err(Box::new(err));
     }
     let schema = Schema {
         hosts,

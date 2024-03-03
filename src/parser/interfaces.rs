@@ -196,7 +196,7 @@ impl<'a> InterfaceParser<'a> {
             key: &key.to_string(),
             value: hash,
             types_usage: &mut self.types_usage,
-            source: TypeDeclSource::InterfaceOutput(key)
+            source: TypeDeclSource::InterfaceOutput(0, key.clone())
         };
         parser
             .parse()

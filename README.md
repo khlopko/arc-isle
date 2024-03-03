@@ -11,11 +11,12 @@ failing all the parsing.
 
 Nearest plans is to:
 
-- [ ] Add types declarations validation. Right now we collect declared types, but does not verify that all usages
+- [x] Add types declarations validation. Right now we collect declared types, but does not verify that all usages
 stict to that declarations and emit errors.
+    - [ ] Still missing precise localisation of missing declaration, good to add at some point before completion.
+- [ ] *Command-line interface.* 
 - [ ] Check speed on larger documents. So far it has been tested on a really small API specification, large and
 more real-world example is required to define if there optimizations to be done.
-- [ ] Command-line interface. Should it be part of the parser?
 - [ ] OpenAPI <> ArcISLE convertation.
 - [ ] Mix types and routes declaration
 - [ ] Different route versions
