@@ -1,6 +1,6 @@
 [package]
 name = "arc-isle"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 license = "Apache-2.0"
 description = "The Interface Specification Language for the Arc project: design and implementation"
@@ -10,3 +10,5 @@ description = "The Interface Specification Language for the Arc project: design 
 [dependencies]
 yaml-rust = "0.4"
 either = "1.8.1"
+crossterm = "0.27.0"
+clap = { version = "4.5.2", features = ["derive"] }
