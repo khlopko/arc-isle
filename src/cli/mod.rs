@@ -1,17 +1,17 @@
-use std::{collections::HashMap, io::stdout};
+use std::{
+    collections::HashMap,
+    io::{stdout, Stdout},
+};
 
 use clap::{Parser, Subcommand};
 use crossterm::{
-    style::{Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
+    style::{Print, ResetColor, SetAttribute},
     ExecutableCommand,
 };
 
 use arc_isle::{
     parser,
-    schema::{
-        self, ApiSpec, HttpPayload, HttpResponses, InterfaceDecl, InterfaceSpec, Schema,
-        StatusCode, TypeDecl,
-    },
+    schema::{self, ApiSpec, HttpPayload, InterfaceSpec, Schema, StatusCode, TypeDecl},
 };
 
 #[derive(Parser)]
@@ -60,16 +60,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn print_hosts(parsed_schema: &Schema) -> Result<(), Box<dyn std::error::Error>> {
-    let separator = (0..80).map(|_| "-").collect::<String>();
-    let indent = (0..4).map(|_| " ").collect::<String>();
-    let mut out = stdout();
-    let builder = out
-        .execute(Print(&separator))?
-        .execute(SetAttribute(crossterm::style::Attribute::Bold))?
-        .execute(Print(format!("\n{}Hosts\n", &indent)))?
-        .execute(Print(&separator))?
-        .execute(Print("\n"))?
-        .execute(ResetColor)?;
+    let (mut out, indent, separator) = prepare();
+    let builder = section_decorator(&mut out, "Hosts", &indent, &separator)?;
     for host in &parsed_schema.hosts {
         builder.execute(Print(format!(
             "{}- {}: {}\n",
@@ -83,15 +75,8 @@ fn print_hosts(parsed_schema: &Schema) -> Result<(), Box<dyn std::error::Error>>
 }
 
 fn print_versioning(parsed_schema: &Schema) -> Result<(), Box<dyn std::error::Error>> {
-    let separator = (0..80).map(|_| "-").collect::<String>();
-    let indent = (0..4).map(|_| " ").collect::<String>();
-    stdout()
-        .execute(Print(&separator))?
-        .execute(SetAttribute(crossterm::style::Attribute::Bold))?
-        .execute(Print(format!("\n{}Versioning\n", &indent)))?
-        .execute(Print(&separator))?
-        .execute(Print("\n"))?
-        .execute(ResetColor)?
+    let (mut out, indent, separator) = prepare();
+    section_decorator(&mut out, "Versioning", &indent, &separator)?
         .execute(Print(format!(
             "{}Format: {:?}\n",
             indent, parsed_schema.versioning.format
@@ -106,16 +91,8 @@ fn print_versioning(parsed_schema: &Schema) -> Result<(), Box<dyn std::error::Er
 }
 
 fn print_types(parsed_schema: &Schema) -> Result<(), Box<dyn std::error::Error>> {
-    let separator = (0..80).map(|_| "-").collect::<String>();
-    let indent = (0..4).map(|_| " ").collect::<String>();
-    let mut out = stdout();
-    let builder = out
-        .execute(Print(&separator))?
-        .execute(SetAttribute(crossterm::style::Attribute::Bold))?
-        .execute(Print(format!("\n{}Types\n", &indent)))?
-        .execute(Print(&separator))?
-        .execute(Print("\n"))?
-        .execute(ResetColor)?;
+    let (mut out, indent, separator) = prepare();
+    let builder = section_decorator(&mut out, "Types", &indent, &separator)?;
     for type_ in &parsed_schema.types {
         match type_ {
             Ok(val) => builder
@@ -170,44 +147,12 @@ fn displayable_propreties(
 }
 
 fn print_interfaces(parsed_schema: &Schema) -> Result<(), Box<dyn std::error::Error>> {
-    let separator = (0..80).map(|_| "-").collect::<String>();
-    let indent = (0..4).map(|_| " ").collect::<String>();
-    let mut out = stdout();
-    let builder = out
-        .execute(Print(&separator))?
-        .execute(SetAttribute(crossterm::style::Attribute::Bold))?
-        .execute(Print(format!("\n{}Interfaces\n", &indent)))?
-        .execute(Print(&separator))?
-        .execute(Print("\n"))?
-        .execute(ResetColor)?;
+    let (mut out, indent, separator) = prepare();
+    let builder = section_decorator(&mut out, "Interfaces", &indent, &separator)?;
     for interface in &parsed_schema.interfaces {
         match interface {
             Ok(val) => match &val.spec {
-                InterfaceSpec::Api(api) => {
-                    builder.execute(Print(format!("{}{} {}\n", &indent, api.method, val.ident)))?;
-                    match &api.payload {
-                        Some(HttpPayload::Query(query)) => {
-                            let mut output = String::new();
-                            displayable_propreties(query, &mut output, &indent, 1);
-                            builder.execute(Print(format!("{}|- Query:\n{}", indent, output)))?
-                        }
-                        Some(HttpPayload::Body(body)) => {
-                            let mut output = String::new();
-                            displayable_propreties(body, &mut output, &indent, 1);
-                            builder.execute(Print(format!("{}|- Body:\n{}", indent, output)))?
-                        }
-                        None => builder.execute(Print(""))?,
-                    };
-                    if let Some(responses) = &api.responses {
-                        builder.execute(Print(format!(
-                            "{}|- Responses:\n{}",
-                            indent,
-                            displayable_responses(&responses, &indent)
-                        )))?
-                    } else {
-                        builder.execute(Print(""))?
-                    }
-                }
+                InterfaceSpec::Api(api) => print_api_spec(&val.ident, &api, builder, &indent)?,
             },
             Err(err) => builder.execute(Print(format!("{}- {:?}\n", &indent, err)))?,
         };
@@ -217,6 +162,45 @@ fn print_interfaces(parsed_schema: &Schema) -> Result<(), Box<dyn std::error::Er
         .execute(Print(&separator))?
         .execute(Print("\r\n"))
         .map(|_| Ok(()))?
+}
+
+fn print_api_spec<'a>(
+    ident: &str,
+    api: &ApiSpec,
+    builder: &'a mut Stdout,
+    indent: &str,
+) -> Result<&'a mut Stdout, Box<dyn std::error::Error>> {
+    builder.execute(Print(format!("{}{} {}\n", &indent, api.method, ident)))?;
+    if let Some(payload) = &api.payload {
+        print_payload(&payload, builder, &indent)?;
+    }
+    if let Some(responses) = &api.responses {
+        builder.execute(Print(format!(
+            "{}|- Responses:\n{}",
+            indent,
+            displayable_responses(&responses, &indent)
+        )))?;
+    }
+    Ok(builder)
+}
+
+fn print_payload<'a>(
+    payload: &HttpPayload,
+    builder: &'a mut Stdout,
+    indent: &str,
+) -> Result<&'a mut Stdout, Box<dyn std::error::Error>> {
+    match payload {
+        HttpPayload::Query(query) => {
+            let mut output = String::new();
+            displayable_propreties(query, &mut output, &indent, 1);
+            Ok(builder.execute(Print(format!("{}|- Query:\n{}", indent, output)))?)
+        }
+        HttpPayload::Body(body) => {
+            let mut output = String::new();
+            displayable_propreties(body, &mut output, &indent, 1);
+            Ok(builder.execute(Print(format!("{}|- Body:\n{}", indent, output)))?)
+        }
+    }
 }
 
 fn displayable_responses(decl: &HashMap<StatusCode, TypeDecl>, indent: &str) -> String {
@@ -231,4 +215,25 @@ fn displayable_responses(decl: &HashMap<StatusCode, TypeDecl>, indent: &str) -> 
         ));
     }
     output
+}
+
+fn prepare() -> (Stdout, String, String) {
+    let separator = (0..80).map(|_| "-").collect::<String>();
+    let indent = (0..4).map(|_| " ").collect::<String>();
+    (stdout(), indent, separator)
+}
+
+fn section_decorator<'a>(
+    out: &'a mut Stdout,
+    title: &str,
+    indent: &str,
+    separator: &str,
+) -> Result<&'a mut Stdout, Box<dyn std::error::Error>> {
+    Ok(out
+        .execute(Print(&separator))?
+        .execute(SetAttribute(crossterm::style::Attribute::Bold))?
+        .execute(Print(format!("\n{}{}\n", &indent, title)))?
+        .execute(Print(&separator))?
+        .execute(Print("\n"))?
+        .execute(ResetColor)?)
 }
