@@ -1,3 +1,5 @@
+[![tests](https://github.com/khlopko/arc-isle/actions/workflows/test.yml/badge.svg)](https://github.com/khlopko/arc-isle/actions/workflows/test.yml)
+
 # ArcISLE
  -- The **I**nterface **S**pecification **L**anguag**e**.
 
